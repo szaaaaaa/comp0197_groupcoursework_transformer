@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python3:*)",
+      "Bash(cd:*)",
+      "mcp__ide__executeCode"
+    ]
+  }
+}
