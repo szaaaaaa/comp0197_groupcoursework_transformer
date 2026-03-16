@@ -1,0 +1,42 @@
+[project]
+name = "comp0197-elec-transformer"
+version = "0.1.0"
+description = "COMP0197 UK electricity consumption prediction and transformer model"
+requires-python = ">=3.10"
+dependencies = [
+    "numpy",
+    "pandas",
+    "matplotlib",
+    "jupyter",
+]
+
+[project.optional-dependencies]
+# ── 提交用环境 (transformer notebook) ──
+# 基础环境: comp0197-pt (python=3.12, torch, torchvision, pillow)
+# 额外安装包 (作业限制 max 3): pandas, matplotlib (共 2 个，合规)
+# torch 已包含在 comp0197-pt 中，无需额外安装
+transformer = [
+    "torch",
+]
+
+# ── 开发参考用 (timeseries notebook) ──
+# 仅用于辅助开发 transformer notebook，不纳入提交
+# 超出作业 3 个额外包限制，不可用于最终提交环境
+timeseries = [
+    "seaborn",
+    "scikit-learn",
+    "tensorflow",
+    "keras",
+    "xgboost",
+    "statsmodels",
+    "pmdarima",
+    "prophet",
+    "linear-tree",
+    "joblib",
+    "holidays",
+    "workalendar",
+]
+
+[build-system]
+requires = ["setuptools>=68.0"]
+build-backend = "setuptools.backends._legacy:_Backend"
