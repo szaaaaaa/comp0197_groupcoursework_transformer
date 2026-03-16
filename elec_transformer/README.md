@@ -208,15 +208,49 @@
 
 ---
 
-## 运行方法
+## 环境配置与运行
 
-1. 激活 `comp0197` 环境：
-   ```
-   micromamba activate C:/Users/ziang/micromamba/envs/comp0197
-   ```
+### 依赖
+
+- Python >= 3.10
+- PyTorch >= 2.0（建议安装 CUDA 版本以启用 GPU 加速）
+- NumPy
+- Pandas
+- Matplotlib
+
+### 安装
+
+使用 conda / mamba 创建环境：
+
+```bash
+conda create -n comp0197 python=3.12 -y
+conda activate comp0197
+conda install pytorch torchvision torchaudio pytorch-cuda=12.1 -c pytorch -c nvidia -y
+conda install numpy pandas matplotlib -y
+```
+
+或使用 pip：
+
+```bash
+python -m venv comp0197
+source comp0197/bin/activate  # Linux/Mac
+# comp0197\Scripts\activate   # Windows
+pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu121
+pip install numpy pandas matplotlib
+```
+
+> 如果没有 NVIDIA GPU，安装 CPU 版 PyTorch 即可：
+> ```bash
+> pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu
+> ```
+> 模型会自动回退到 CPU 运行，但训练速度会显著变慢。
+
+### 运行
+
+1. 激活环境（`conda activate comp0197`）
 2. 在 VS Code 或 Jupyter 中打开 `uk-electricity-transformer.ipynb`
 3. 按顺序运行所有 cell（Run All）
-4. 在 GPU（CUDA）上训练约需 2–5 分钟
+4. GPU 上训练约 2–5 分钟，CPU 上约 15–30 分钟
 
 ---
 
@@ -228,6 +262,5 @@ elec_transformer/
 │   └── historic_demand_2009_2024_noNaN.csv
 ├── uk-electricity-consumption-prediction-time-series.ipynb  # 原始参考 notebook
 ├── uk-electricity-transformer.ipynb                         # Transformer notebook（本项目）
-├── README.md                                                # 英文说明文档
-└── README_CN.md                                             # 中文说明文档（本文件）
+└── README.md                                                # 说明文档（本文件）
 ```
