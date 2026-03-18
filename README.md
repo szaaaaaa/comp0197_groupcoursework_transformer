@@ -170,11 +170,34 @@ pip install pandas matplotlib
 > ```
 > 代码会自动检测并使用 GPU，与 CPU 版本完全兼容。
 
-### 运行
+### 运行方式
+
+#### 方式一：Notebook（交互式，适合展示和调试）
 
 1. 激活环境（`micromamba activate comp0197-pt`）
-2. 在 VS Code 或 Jupyter 中打开 `uk-electricity-transformer.ipynb`
+2. 在 VS Code 或 Jupyter 中打开对应 notebook
 3. 按顺序运行所有 cell（Run All）
+
+可用的 Notebook：
+- `uk-electricity-transformer.ipynb` — 含特征工程的完整版
+- `uk-electricity-transformer-no-fe.ipynb` — 无特征工程对比版
+
+#### 方式二：命令行脚本（模块化代码）
+
+```bash
+cd elec_transformer
+
+# 含特征工程训练
+python train.py --config configs/default.yaml
+
+# 无特征工程训练
+python train.py --config configs/no_fe.yaml
+
+# 使用已保存的 checkpoint 推理
+python predict.py --config configs/default.yaml --checkpoint checkpoints/transformer_best.pt
+```
+
+命令行脚本与 Notebook 的逻辑完全等价，训练完成后会自动保存最优模型到 `checkpoints/`，并输出 MAPE 和 RMSE。
 
 ---
 
@@ -182,11 +205,132 @@ pip install pandas matplotlib
 
 ```
 comp0197/
-├── pyproject.toml                                          # 项目依赖配置
-├── README.md                                               # 说明文档（本文件）
+├── pyproject.toml                                              # 项目依赖配置
+├── README.md                                                   # 说明文档（本文件）
 └── elec_transformer/
     ├── data/
-    │   └── historic_demand_2009_2024_noNaN.csv
-    ├── uk-electricity-consumption-prediction-time-series.ipynb  # 原始参考 notebook（仅供开发参考）
-    └── uk-electricity-transformer.ipynb                         # Transformer notebook（本项目）
+    │   └── historic_demand_2009_2024_noNaN.csv                 # 数据集
+    │
+    ├── configs/
+    │   ├── default.yaml                                        # 默认配置（含特征工程）
+    │   └── no_fe.yaml                                          # 无特征工程配置
+    │
+    ├── src/                                                    # 模块化源码
+    │   ├── data/
+    │   │   ├── loader.py                                       # CSV 加载、清洗、数据划分
+    │   │   ├── feature.py                                      # 时间特征提取
+    │   │   └── dataset.py                                      # 归一化、滑动窗口、DataLoader
+    │   ├── models/
+    │   │   ├── base.py                                         # 模型基类（统一接口）
+    │   │   └── transformer.py                                  # Transformer 模型
+    │   ├── training/
+    │   │   ├── trainer.py                                      # 训练循环、早停、checkpoint
+    │   │   └── loss.py                                         # 损失函数
+    │   └── evaluation/
+    │       ├── metrics.py                                      # MAPE、RMSE
+    │       └── visualize.py                                    # 可视化函数
+    │
+    ├── train.py                                                # 训练入口脚本
+    ├── predict.py                                              # 推理入口脚本
+    ├── checkpoints/                                            # 模型权重保存目录
+    ├── logs/                                                   # 训练日志目录
+    │
+    ├── uk-electricity-transformer.ipynb                        # Notebook（含特征工程）
+    ├── uk-electricity-transformer-no-fe.ipynb                  # Notebook（无特征工程）
+    └── uk-electricity-consumption-prediction-time-series.ipynb # 原始参考 notebook
 ```
+
+### 扩展新模型
+
+项目使用**自动注册机制**，添加新模型**不需要修改 `train.py` 或 `predict.py`**，只需两步：
+
+#### 第一步：在 `src/models/` 下新建模型文件
+
+以 GRU 为例，创建 `src/models/gru.py`：
+
+```python
+import torch
+import torch.nn as nn
+
+from .base import BaseModel
+from . import register_model
+
+
+@register_model("gru")                            # ← 注册名，yaml 中用这个名字引用
+class TimeSeriesGRU(BaseModel):
+    """基于 GRU 的时序预测模型。"""
+
+    def __init__(self, n_features, hidden_size=64, num_layers=2, dropout=0.5):
+        super().__init__()
+        self.gru = nn.GRU(
+            input_size=n_features,
+            hidden_size=hidden_size,
+            num_layers=num_layers,
+            batch_first=True,
+            dropout=dropout if num_layers > 1 else 0.0,
+        )
+        self.mu_head = nn.Sequential(
+            nn.Linear(hidden_size, 32),
+            nn.ReLU(),
+            nn.Dropout(dropout),
+            nn.Linear(32, 1),
+        )
+        self.logvar_head = nn.Sequential(
+            nn.Linear(hidden_size, 32),
+            nn.ReLU(),
+            nn.Dropout(dropout),
+            nn.Linear(32, 1),
+        )
+
+    def forward(self, x):
+        out, _ = self.gru(x)                      # (batch, seq_len, hidden)
+        out = out[:, -1, :]                        # 取最后时间步
+        mu = self.mu_head(out).squeeze(-1)
+        log_var = self.logvar_head(out).squeeze(-1)
+        var = torch.exp(log_var)
+        return mu, var                             # ← 必须返回 (mu, var) 元组
+
+    @classmethod
+    def from_config(cls, model_cfg, n_features):   # ← 从 yaml 读取参数构造实例
+        return cls(
+            n_features=n_features,
+            hidden_size=model_cfg.get("d_model", 64),
+            num_layers=model_cfg.get("num_layers", 2),
+            dropout=model_cfg.get("dropout", 0.5),
+        )
+```
+
+**要点**：
+- 继承 `BaseModel`，加 `@register_model("名字")` 装饰器
+- `forward()` 返回 `(mu, var)` 元组（概率预测接口）
+- `from_config()` 从 yaml 的 `model` 字段读取参数
+
+#### 第二步：创建或修改 yaml 配置
+
+复制一份已有配置，只改 `model.type`：
+
+```yaml
+# configs/gru.yaml
+model:
+  type: gru          # ← 对应 @register_model("gru")
+  d_model: 64        # GRU 中作为 hidden_size
+  num_layers: 2
+  dropout: 0.5
+  # 注意：nhead 和 dim_feedforward 是 Transformer 专用参数，GRU 不需要
+
+# 其余字段（data、features、training）与 default.yaml 相同
+```
+
+#### 运行
+
+```bash
+python train.py --config configs/gru.yaml
+```
+
+完成。`src/models/__init__.py` 会自动扫描目录下所有模型文件，找到带 `@register_model` 的类并注册。
+
+#### 已内置的模型
+
+| 注册名 | 文件 | 说明 |
+|--------|------|------|
+| `transformer` | `src/models/transformer.py` | Transformer Encoder + 概率输出 |

@@ -1,0 +1,36 @@
+# ============================================================
+# 无特征工程配置 —— 仅用历史 TSD 预测
+# ============================================================
+
+seed: 221
+
+data:
+  csv_path: data/historic_demand_2009_2024_noNaN.csv
+  date_start: "2019-01-01"
+  date_end: "2024-12-31"
+  target: tsd
+  threshold_date_1: "01-01-2023"
+  threshold_date_2: "01-01-2024"
+
+features:
+  enabled: false
+  columns: []
+  cols_to_scale: all
+
+seq_len: 48
+batch_size: 144
+
+model:
+  type: transformer
+  d_model: 64
+  nhead: 4
+  num_layers: 2
+  dim_feedforward: 128
+  dropout: 0.5
+
+training:
+  num_epochs: 50
+  learning_rate: 5.0e-4
+  patience: 12
+  lr_factor: 0.5
+  lr_patience: 5

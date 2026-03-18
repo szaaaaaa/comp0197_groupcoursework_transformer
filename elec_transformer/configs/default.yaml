@@ -1,0 +1,49 @@
+# ============================================================
+# 默认超参数配置
+# ============================================================
+
+seed: 221
+
+# --- 数据 ---
+data:
+  csv_path: data/historic_demand_2009_2024_noNaN.csv
+  date_start: "2019-01-01"
+  date_end: "2024-12-31"
+  target: tsd
+  threshold_date_1: "01-01-2023"   # train/val 分界
+  threshold_date_2: "01-01-2024"   # val/test 分界
+
+# --- 特征工程（设 enabled: false 则仅用历史 tsd） ---
+features:
+  enabled: true
+  columns:
+    - is_holiday
+    - settlement_period
+    - day_of_month
+    - day_of_week
+    - day_of_year
+    - quarter
+    - month
+    - week_of_year
+  cols_to_scale: all   # "all" = 所有特征+目标; 也可指定列名列表
+
+# --- 序列与批次 ---
+seq_len: 48
+batch_size: 144
+
+# --- 模型 ---
+model:
+  type: transformer    # transformer / lstm（以后扩展）
+  d_model: 64
+  nhead: 4
+  num_layers: 2
+  dim_feedforward: 128
+  dropout: 0.5
+
+# --- 训练 ---
+training:
+  num_epochs: 50
+  learning_rate: 5.0e-4
+  patience: 12
+  lr_factor: 0.5
+  lr_patience: 5

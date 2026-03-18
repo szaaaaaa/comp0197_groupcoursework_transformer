@@ -1,0 +1,45 @@
+# ============================================================
+# Mamba (Selective SSM) 配置
+# ============================================================
+
+seed: 221
+
+data:
+  csv_path: data/historic_demand_2009_2024_noNaN.csv
+  date_start: "2019-01-01"
+  date_end: "2024-12-31"
+  target: tsd
+  threshold_date_1: "01-01-2023"
+  threshold_date_2: "01-01-2024"
+
+features:
+  enabled: false
+  columns:
+    - is_holiday
+    - settlement_period
+    - day_of_month
+    - day_of_week
+    - day_of_year
+    - quarter
+    - month
+    - week_of_year
+  cols_to_scale: all
+
+seq_len: 48
+batch_size: 144
+
+model:
+  type: mamba
+  d_model: 64
+  d_state: 16          # SSM 隐状态维度
+  d_conv: 4            # 因果卷积核大小
+  expand: 2            # 内部扩展倍率（d_inner = d_model * expand）
+  num_layers: 2
+  dropout: 0.5
+
+training:
+  num_epochs: 50
+  learning_rate: 5.0e-4
+  patience: 12
+  lr_factor: 0.5
+  lr_patience: 5
