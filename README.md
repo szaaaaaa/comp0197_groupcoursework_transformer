@@ -150,8 +150,9 @@
 基础环境 `comp0197-pt`（Python 3.12 + torch + torchvision + pillow），额外需要：
 - pandas
 - matplotlib
+- pyyaml（`train.py` / `predict.py` 读取 `configs/*.yaml` 所需）
 
-（共 2 个额外包，符合作业要求的 max 3 限制）
+（共 3 个额外包，符合作业要求的 max 3 限制）
 
 ### 安装
 
@@ -161,7 +162,7 @@
 micromamba create --name comp0197-pt python=3.12 -y
 micromamba activate comp0197-pt
 pip install torch torchvision pillow --index-url https://download.pytorch.org/whl/cpu
-pip install pandas matplotlib
+pip install pandas matplotlib pyyaml
 ```
 
 > 如果有 NVIDIA GPU，可安装 CUDA 版 PyTorch 加速训练：
@@ -193,11 +194,15 @@ python train.py --config configs/default.yaml
 # 无特征工程训练
 python train.py --config configs/no_fe.yaml
 
-# 使用已保存的 checkpoint 推理
-python predict.py --config configs/default.yaml --checkpoint checkpoints/transformer_best.pt
+# Mamba 模型训练
+python train.py --config configs/mamba.yaml
+
+# 使用已保存的 checkpoint 推理（将 <run_id> 替换为训练生成的时间戳）
+python predict.py --config configs/default.yaml --checkpoint checkpoints/transformer_best_<run_id>.pt
 ```
 
 命令行脚本与 Notebook 的逻辑完全等价，训练完成后会自动保存最优模型到 `checkpoints/`，并输出 MAPE 和 RMSE。
+补充：当前代码会将 checkpoint 实际保存为 `checkpoints/<model>_best_<run_id>.pt`，并在 `logs/run_<run_id>/` 下写入 `train.log`，训练结束后同目录生成 `result.json`。
 
 ---
 
@@ -213,6 +218,7 @@ comp0197/
     │
     ├── configs/
     │   ├── default.yaml                                        # 默认配置（含特征工程）
+    │   ├── mamba.yaml                                          # Mamba 配置
     │   └── no_fe.yaml                                          # 无特征工程配置
     │
     ├── src/                                                    # 模块化源码
@@ -222,6 +228,7 @@ comp0197/
     │   │   └── dataset.py                                      # 归一化、滑动窗口、DataLoader
     │   ├── models/
     │   │   ├── base.py                                         # 模型基类（统一接口）
+    │   │   ├── mamba.py                                        # Mamba 模型
     │   │   └── transformer.py                                  # Transformer 模型
     │   ├── training/
     │   │   ├── trainer.py                                      # 训练循环、早停、checkpoint
@@ -232,8 +239,11 @@ comp0197/
     │
     ├── train.py                                                # 训练入口脚本
     ├── predict.py                                              # 推理入口脚本
-    ├── checkpoints/                                            # 模型权重保存目录
-    ├── logs/                                                   # 训练日志目录
+    ├── checkpoints/                                            # 模型权重保存目录（实际文件名为 <model>_best_<run_id>.pt）
+    ├── logs/                                                   # 训练日志目录（按 run_id 生成子目录）
+    │   └── run_<run_id>/
+    │       ├── train.log                                       # 每个 epoch 追加写入
+    │       └── result.json                                     # 训练完成后写入指标与配置
     │
     ├── uk-electricity-transformer.ipynb                        # Notebook（含特征工程）
     ├── uk-electricity-transformer-no-fe.ipynb                  # Notebook（无特征工程）
@@ -333,4 +343,5 @@ python train.py --config configs/gru.yaml
 
 | 注册名 | 文件 | 说明 |
 |--------|------|------|
+| `mamba` | `src/models/mamba.py` | Selective SSM / Mamba 概率输出模型 |
 | `transformer` | `src/models/transformer.py` | Transformer Encoder + 概率输出 |
