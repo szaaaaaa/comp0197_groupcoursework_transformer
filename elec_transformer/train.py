@@ -129,11 +129,22 @@ def main(config_path: str):
 
     # ---- 可视化 ----
     setup_matplotlib()
-    plot_split(train_df, val_df, test_df,
-               cfg["data"]["threshold_date_1"], cfg["data"]["threshold_date_2"])
-    plot_loss_curve(trainer.train_losses, trainer.val_losses)
-    plot_predictions(result)
-    plot_detail(result, "08-01-2024", "08-14-2024")
+    figures = {
+        "split.png": plot_split(
+            train_df,
+            val_df,
+            test_df,
+            cfg["data"]["threshold_date_1"],
+            cfg["data"]["threshold_date_2"],
+        ),
+        "loss_curve.png": plot_loss_curve(trainer.train_losses, trainer.val_losses),
+        "predictions.png": plot_predictions(result),
+        "detail_2024-08-01_2024-08-14.png": plot_detail(result, "08-01-2024", "08-14-2024"),
+    }
+
+    for filename, fig in figures.items():
+        fig.savefig(os.path.join(trainer.run_dir, filename), dpi=200, bbox_inches="tight")
+
     import matplotlib.pyplot as plt
     plt.show()
 
