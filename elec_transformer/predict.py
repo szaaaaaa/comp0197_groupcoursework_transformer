@@ -15,7 +15,7 @@ from src.data.loader import load_and_clean, split_data
 from src.data.feature import create_features
 from src.data.dataset import TimeSeriesDataset
 from src.models import build_model
-from src.evaluation.metrics import mape, rmse
+from src.evaluation.metrics import mape, rmse, picp, mpiw
 from src.evaluation.visualize import setup_matplotlib, plot_predictions, plot_detail
 
 
@@ -82,6 +82,8 @@ def main(config_path: str, checkpoint_path: str):
 
     print(f"MAPE: {mape(result['tsd'], result['pred']):.2f}%")
     print(f"RMSE: {rmse(result['tsd'], result['pred']):.2f} MW")
+    print(f"PICP: {picp(result['tsd'], result['pred'], result['std']):.2f}%")
+    print(f"MPIW: {mpiw(result['std']):.2f} MW")
 
     # 可视化
     setup_matplotlib()
