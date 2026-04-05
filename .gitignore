@@ -7,6 +7,6 @@ elec_transformer/src/models/mamba.py
 elec_transformer/uk-electricity-consumption-prediction-time-series.ipynb
 elec_transformer/uk-electricity-transformer-no-fe.ipynb
 elec_transformer/uk-electricity-transformer.ipynb
-elec_transformer\configs\mamba.yaml
+elec_transformer/configs/mamba.yaml
 __pycache__/
 *.pyc
