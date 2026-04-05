@@ -1,5 +1,5 @@
 # ============================================================
-# 默认超参数配置
+# LSTM 超参数配置
 # ============================================================
 
 seed: 221
@@ -10,10 +10,10 @@ data:
   date_start: "2019-01-01"
   date_end: "2024-12-31"
   target: tsd
-  threshold_date_1: "01-01-2023"   # train/val 分界
-  threshold_date_2: "01-01-2024"   # val/test 分界
+  threshold_date_1: "01-01-2023"
+  threshold_date_2: "01-01-2024"
 
-# --- 特征工程（设 enabled: false 则仅用历史 tsd） ---
+# --- 特征工程 ---
 features:
   enabled: true
   columns:
@@ -27,12 +27,11 @@ batch_size: 144
 
 # --- 模型 ---
 model:
-  type: transformer    # transformer / lstm（以后扩展）
+  type: lstm
   d_model: 64
-  nhead: 4
   num_layers: 2
-  dim_feedforward: 128
   dropout: 0.5
+  bidirectional: false
 
 # --- 训练 ---
 training:

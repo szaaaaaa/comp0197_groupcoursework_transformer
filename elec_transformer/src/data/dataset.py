@@ -62,7 +62,7 @@ class TimeSeriesDataset:
         self.X_val, self.y_val = self._create_sequences_multi(val_scaled)
         self.X_test, self.y_test = self._create_sequences_multi(test_scaled)
 
-        self.n_features = len(features)
+        self.n_features = len(features) + 1  # features + target(tsd)
 
         # 保存原始测试集用于结果构建
         self.test_index = test_df.index[self.seq_len:]
@@ -95,11 +95,11 @@ class TimeSeriesDataset:
         self.test_actual = test_df[target].iloc[self.seq_len:].values
 
     def _create_sequences_multi(self, data):
-        """多维滑动窗口：X = data[i:i+seq_len, :-1], y = data[i+seq_len, -1]"""
+        """多维滑动窗口：X = data[i:i+seq_len, :] (含 tsd), y = data[i+seq_len, -1]"""
         X, y = [], []
         for i in range(len(data) - self.seq_len):
-            X.append(data[i:i + self.seq_len, :-1])
-            y.append(data[i + self.seq_len, -1])
+            X.append(data[i:i + self.seq_len])          # 所有列（含历史 tsd）
+            y.append(data[i + self.seq_len, -1])        # 目标：下一步 tsd
         return np.array(X), np.array(y)
 
     def _create_sequences_single(self, data):

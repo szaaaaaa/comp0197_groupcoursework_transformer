@@ -3,5 +3,10 @@ cw1
 elec_transformer/Assessed-Component-2&3 COMP0197 2025-26 (draft).pdf
 elec_transformer/checkpoints
 elec_transformer/logs
+elec_transformer/src/models/mamba.py
+elec_transformer/uk-electricity-consumption-prediction-time-series.ipynb
+elec_transformer/uk-electricity-transformer-no-fe.ipynb
+elec_transformer/uk-electricity-transformer.ipynb
+elec_transformer\configs\mamba.yaml
 __pycache__/
 *.pyc

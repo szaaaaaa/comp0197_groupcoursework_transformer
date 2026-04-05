@@ -2,6 +2,47 @@
 
 本日志根据仓库中的关键 Git 提交整理，默认忽略纯合并提交；提交哈希仅用于追溯。
 
+## 2026-04-05
+
+### SARIMA 集成
+
+- 将同学的 SARIMA baseline 实现集成进 elec_transformer 框架
+- 新建 `src/models/sarima.py`：从原始约 1350 行精简为约 320 行，保留核心算法（参数选择、拟合、rolling day-ahead 预测、save/load）
+- 新建 `configs/sarima.yaml`：数据划分与深度学习模型统一，12 组候选参数网格
+- SARIMA 不继承 BaseModel，通过 `train.py` / `test.py` 中的 if-else 分支调用
+- SARIMA 合并 train+val 作为完整训练集（因不需要 early stopping 的独立验证集）
+
+### 统一评估指标
+
+- `src/evaluation/metrics.py` 新增 `mae` 和 `gaussian_nll` 函数
+- 所有模型统一使用 6 个指标：MAE、MAPE、RMSE、Gaussian NLL、PICP、MPIW
+- `test.py` 评估部分提取到 if-else 分支之外，所有模型共用
+
+### CNN 与 LSTM 集成
+
+- 集成同学的 CNN 实现为 `src/models/cnn.py`，注册为 `@register_model("cnn")`
+- 适配框架：添加 `x.permute(0,2,1)` 适配 Conv1d，改为单步 (batch,) 输出
+- 集成 ica2 的 LSTM 实现为 `src/models/lstm.py`，注册为 `@register_model("lstm")`
+- 新建 `configs/cnn.yaml` 和 `configs/lstm.yaml`
+
+### 特征工程与实验设置统一
+
+- 所有深度学习模型统一使用 `is_day_off`（含 `shift(-1)` 时间对齐）+ 历史 `tsd` 作为输入
+- 修复 `dataset.py`：将 `data[i:i+seq_len, :-1]` 改为 `data[i:i+seq_len]`，使历史 tsd 包含在输入中
+- 统一三个深度学习模型的超参数：lr=5e-4, dropout=0.5, patience=12, num_epochs=50
+- `feature.py` 精简为仅生成 `is_day_off`，仅对 `tsd` 做 MinMax 归一化
+
+### train.py / test.py 重构
+
+- `train.py` 加入 `if model_type == "sarima"` 分支，SARIMA 跳过 TimeSeriesDataset 和 Trainer
+- `test.py`（原 `predict.py`）加入 SARIMA 分支，并统一评估输出
+- `predict.py` 更名为 `test.py` 以符合作业要求
+
+### 更新文档
+
+- 重写 README：反映多模型框架、统一评估指标、SARIMA 集成
+- 更新 CHANGELOG
+
 ## 2026-03-18
 
 ### 训练图像归档

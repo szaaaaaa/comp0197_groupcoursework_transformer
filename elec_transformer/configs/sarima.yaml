@@ -1,0 +1,53 @@
+# ============================================================
+# SARIMA 超参数配置
+# ============================================================
+
+seed: 221
+
+# --- 数据（与深度学习模型统一） ---
+data:
+  csv_path: data/historic_demand_2009_2024_noNaN.csv
+  date_start: "2019-01-01"
+  date_end: "2024-12-31"
+  target: tsd
+  threshold_date_1: "01-01-2023"
+  threshold_date_2: "01-01-2024"
+
+# --- 特征工程（SARIMA 不使用外部特征） ---
+features:
+  enabled: false
+
+# --- 模型 ---
+model:
+  type: sarima
+  seasonal_period: 48
+  candidate_specs:
+    - order: [0,1,0]
+      seasonal_order: [0,1,0]
+    - order: [1,1,0]
+      seasonal_order: [0,1,0]
+    - order: [0,1,1]
+      seasonal_order: [0,1,0]
+    - order: [1,1,1]
+      seasonal_order: [0,1,0]
+    - order: [1,1,0]
+      seasonal_order: [1,1,0]
+    - order: [0,1,1]
+      seasonal_order: [1,1,0]
+    - order: [1,1,1]
+      seasonal_order: [1,1,0]
+    - order: [2,1,0]
+      seasonal_order: [1,1,0]
+    - order: [2,1,1]
+      seasonal_order: [1,1,0]
+    - order: [1,0,1]
+      seasonal_order: [1,1,0]
+    - order: [1,0,2]
+      seasonal_order: [1,1,0]
+    - order: [2,0,1]
+      seasonal_order: [1,1,0]
+
+# --- 训练（SARIMA 的超参选择设置） ---
+training:
+  selection_window_steps: 5760   # 48 * 120 天
+  validation_day_count: 14
