@@ -8,5 +8,8 @@ elec_transformer/uk-electricity-consumption-prediction-time-series.ipynb
 elec_transformer/uk-electricity-transformer-no-fe.ipynb
 elec_transformer/uk-electricity-transformer.ipynb
 elec_transformer/configs/mamba.yaml
+code/_make_instruction_pdf.py
+code/_make_report_pdf.py
+code/_make_report_zh_pdf.py
 __pycache__/
 *.pyc
