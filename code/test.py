@@ -91,7 +91,7 @@ def get_experiment_name(cfg):
     return name
 
 
-def test_single(config_path: str, checkpoint_path: str):
+def test_single(config_path: str, checkpoint_path: str, out_root: str = "results"):
     """Run inference on the test set, compute metrics, and save figures.
 
     Parameters
@@ -100,6 +100,8 @@ def test_single(config_path: str, checkpoint_path: str):
         Path to the YAML configuration file.
     checkpoint_path : str
         Path to the saved model checkpoint.
+    out_root : str
+        Root directory for saving results (e.g. ``results/run_20260406``).
     """
     with open(config_path, encoding="utf-8") as f:
         cfg = yaml.safe_load(f)
@@ -110,7 +112,7 @@ def test_single(config_path: str, checkpoint_path: str):
     exp_name = get_experiment_name(cfg)
 
     # Output directory
-    out_dir = os.path.join("results", exp_name)
+    out_dir = os.path.join(out_root, exp_name)
     os.makedirs(out_dir, exist_ok=True)
 
     # Data
@@ -212,11 +214,13 @@ def test_single(config_path: str, checkpoint_path: str):
 
     # ---- Visualization (save to files) ----
     setup_matplotlib()
+    loss_name = cfg.get("training", {}).get("loss", "gaussian_nll")
+    show_ci = loss_name != "mse"
 
-    fig1 = plot_predictions(result, title=f"{exp_name} — Test Set Predictions")
+    fig1 = plot_predictions(result, title=f"{exp_name} — Test Set Predictions", show_ci=show_ci)
     fig1.savefig(os.path.join(out_dir, "predictions.png"), dpi=200, bbox_inches="tight")
 
-    fig2 = plot_detail(result, "08-01-2024", "08-14-2024")
+    fig2 = plot_detail(result, "08-01-2024", "08-14-2024", show_ci=show_ci)
     fig2.savefig(os.path.join(out_dir, "detail.png"), dpi=200, bbox_inches="tight")
 
     print(f"Figures saved to {out_dir}/")
@@ -225,9 +229,15 @@ def test_single(config_path: str, checkpoint_path: str):
     plt.close("all")
 
 
-def summarize():
-    """Read all results/*/metrics.json and print + save summary table."""
-    results_files = sorted(glob.glob("results/*/metrics.json"))
+def summarize(run_dir):
+    """Read all metrics.json under *run_dir* and print + save summary table.
+
+    Parameters
+    ----------
+    run_dir : str
+        Path to the run directory (e.g. ``results/run_20260406``).
+    """
+    results_files = sorted(glob.glob(os.path.join(run_dir, "*/metrics.json")))
     if not results_files:
         print("No results found.")
         return
@@ -245,13 +255,22 @@ def summarize():
 
     print(df.to_string())
 
-    summary_path = os.path.join("results", "summary.csv")
+    summary_path = os.path.join(run_dir, "summary.csv")
     df.to_csv(summary_path)
     print(f"\nSummary saved to {summary_path}")
 
 
 def run_all():
-    """Test all models with available checkpoints, then summarize."""
+    """Test all models with available checkpoints, then summarize.
+
+    Creates a timestamped run directory under ``results/``.
+    """
+    from datetime import datetime
+    run_id = datetime.now().strftime("%Y%m%d_%H%M%S")
+    run_dir = os.path.join("results", f"run_{run_id}")
+    os.makedirs(run_dir, exist_ok=True)
+    print(f"Run directory: {run_dir}")
+
     valid_configs = [c for c in ALL_CONFIGS if os.path.exists(c)]
     total = len(valid_configs)
 
@@ -266,13 +285,13 @@ def run_all():
         print(f"\n{'='*60}")
         print(f"[{i}/{total}] TESTING: {config}")
         print(f"{'='*60}")
-        test_single(config, ckpt)
+        test_single(config, ckpt, out_root=run_dir)
 
     # Summary
     print(f"\n{'='*60}")
     print("SUMMARY")
     print(f"{'='*60}")
-    summarize()
+    summarize(run_dir)
 
 
 if __name__ == "__main__":

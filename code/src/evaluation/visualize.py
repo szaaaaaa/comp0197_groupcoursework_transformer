@@ -85,8 +85,8 @@ def plot_loss_curve(train_losses, val_losses):
     return fig
 
 
-def plot_predictions(result_frame, title="Test Set Predictions with Uncertainty"):
-    """Plot test-set predictions with 95 % confidence interval.
+def plot_predictions(result_frame, title="Test Set Predictions with Uncertainty", show_ci=True):
+    """Plot test-set predictions, optionally with 95 % confidence interval.
 
     Parameters
     ----------
@@ -94,6 +94,8 @@ def plot_predictions(result_frame, title="Test Set Predictions with Uncertainty"
         Must contain columns ``tsd``, ``pred``, ``std``.
     title : str
         Figure title.
+    show_ci : bool
+        Whether to draw the confidence interval shading.
 
     Returns
     -------
@@ -102,12 +104,13 @@ def plot_predictions(result_frame, title="Test Set Predictions with Uncertainty"
     fig, ax = plt.subplots(figsize=(15, 5))
     ax.plot(result_frame.index, result_frame["tsd"], "o", markersize=1, alpha=0.3, label="Actual")
     ax.plot(result_frame.index, result_frame["pred"], "o", markersize=1, alpha=0.3, label="Prediction (μ)")
-    ax.fill_between(
-        result_frame.index,
-        result_frame["pred"] - 1.96 * result_frame["std"],
-        result_frame["pred"] + 1.96 * result_frame["std"],
-        alpha=0.15, color="orange", label="95% Confidence Interval",
-    )
+    if show_ci:
+        ax.fill_between(
+            result_frame.index,
+            result_frame["pred"] - 1.96 * result_frame["std"],
+            result_frame["pred"] + 1.96 * result_frame["std"],
+            alpha=0.15, color="orange", label="95% Confidence Interval",
+        )
     ax.legend(loc="center", bbox_to_anchor=(1.15, 0.5))
     ax.set_title(title)
     ax.set_ylabel("Electricity Demand (MW)")
@@ -115,7 +118,7 @@ def plot_predictions(result_frame, title="Test Set Predictions with Uncertainty"
     return fig
 
 
-def plot_detail(result_frame, begin, end):
+def plot_detail(result_frame, begin, end, show_ci=True):
     """Plot a zoomed-in two-week detail comparison.
 
     Parameters
@@ -124,6 +127,8 @@ def plot_detail(result_frame, begin, end):
         Must contain columns ``tsd``, ``pred``, ``std``.
     begin, end : str
         Date strings defining the detail window.
+    show_ci : bool
+        Whether to draw the confidence interval shading.
 
     Returns
     -------
@@ -135,12 +140,13 @@ def plot_detail(result_frame, begin, end):
     fig, ax = plt.subplots(figsize=(20, 5))
     ax.plot(sub.index, sub["tsd"], "-o", label="Actual")
     ax.plot(sub.index, sub["pred"], "-s", label="Prediction (μ)")
-    ax.fill_between(
-        sub.index,
-        sub["pred"] - 1.96 * sub["std"],
-        sub["pred"] + 1.96 * sub["std"],
-        alpha=0.25, color="orange", label="95% CI",
-    )
+    if show_ci:
+        ax.fill_between(
+            sub.index,
+            sub["pred"] - 1.96 * sub["std"],
+            sub["pred"] + 1.96 * sub["std"],
+            alpha=0.25, color="orange", label="95% CI",
+        )
     ax.legend(loc="center", bbox_to_anchor=(1.15, 0.5))
     ax.set_title("Test Set Predictions — Two-Week Detail")
     ax.set_ylabel("Electricity Demand (MW)")
