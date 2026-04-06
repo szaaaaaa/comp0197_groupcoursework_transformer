@@ -1,70 +1,72 @@
-# 英国电力需求预测 —— 概率时序预测框架
+# UK Electricity Demand Forecasting — Probabilistic Time Series Framework
 
-## 项目概述
+## Overview
 
-本项目使用多种模型对英国电力需求（TSD，单位 MW）进行**概率预测**，所有模型统一输出均值和标准差，支持不确定性量化。
+This project applies multiple models to probabilistic forecasting of UK electricity demand (TSD, in MW). All models output a mean and standard deviation, enabling uncertainty quantification.
 
-数据集覆盖 **2019–2024 年** 英国国家电网的半小时电力需求数据，每天 48 个采样点。
-
----
-
-## 支持的模型
-
-| 模型 | 类型 | 配置文件 | 保存格式 |
-|------|------|---------|---------|
-| Transformer | 深度学习 | `configs/default.yaml` | `.pt` |
-| LSTM | 深度学习 | `configs/lstm.yaml` | `.pt` |
-| CNN | 深度学习 | `configs/cnn.yaml` | `.pt` |
-| SARIMA | 传统统计 | `configs/sarima.yaml` | `.pkl` |
-
-所有深度学习模型通过 `@register_model` 装饰器自动注册；SARIMA 因不兼容 PyTorch，在 `train.py` / `test.py` 中通过 if-else 分支调用。
+The dataset covers **2019–2024** half-hourly electricity demand data from the UK National Grid, with 48 data points per day.
 
 ---
 
-## 数据划分
+## Supported Models
+
+| Model | Type | Config | Checkpoint |
+|-------|------|--------|------------|
+| Transformer | Deep learning | `configs/transformer.yaml` | `.pt` |
+| LSTM | Deep learning | `configs/lstm.yaml` | `.pt` |
+| CNN | Deep learning | `configs/cnn.yaml` | `.pt` |
+| SARIMA | Statistical | `configs/sarima.yaml` | `.pkl` |
+| LSTM (MSE) | Deterministic baseline | `configs/lstm_mse.yaml` | `.pt` |
+| LSTM (no FE) | Ablation study | `configs/lstm_no_fe.yaml` | `.pt` |
+
+All deep learning models are auto-registered via the `@register_model` decorator. SARIMA, being incompatible with PyTorch, is invoked through if-else branching in `train.py` / `test.py`.
+
+---
+
+## Data Split
 
 ```
-2019-01-01 ═══ 训练集 (4年) ═══ 2023-01-01 ═══ 验证集 (1年) ═══ 2024-01-01 ═══ 测试集 ═══ 2024-12-05
+2019-01-01 ═══ Train (4 yrs) ═══ 2023-01-01 ═══ Val (1 yr) ═══ 2024-01-01 ═══ Test ═══ 2024-12-05
 ```
 
-- **训练集**：2019-01-01 ~ 2022-12-31
-- **验证集**：2023-01-01 ~ 2023-12-31（深度学习用于早停；SARIMA 合并入训练集，内部 rolling validation 选参）
-- **测试集**：2024-01-01 ~ 2024-12-05（CSV 数据截止日期）
+- **Train**: 2019-01-01 ~ 2022-12-31
+- **Validation**: 2023-01-01 ~ 2023-12-31 (early stopping for deep learning; merged into training set for SARIMA with internal rolling validation)
+- **Test**: 2024-01-01 ~ 2024-12-05 (CSV data end date)
 
 ---
 
-## 特征工程
+## Feature Engineering
 
-| 模型 | 输入特征 | 说明 |
-|------|---------|------|
-| Transformer / LSTM / CNN | `is_day_off` + 历史 `tsd` | `is_day_off` 做 `shift(-1)` 对齐到预测目标时刻，仅对 `tsd` 做 MinMax 归一化 |
-| SARIMA | 仅历史 `tsd` | 纯单变量自回归，无外部特征，无归一化（通过差分处理非平稳性） |
+| Model | Input Features | Notes |
+|-------|---------------|-------|
+| Transformer / LSTM / CNN | `is_day_off` + historical `tsd` | `is_day_off` shifted by -1 to align with the prediction target; MinMax normalization applied to `tsd` only |
+| SARIMA | Historical `tsd` only | Univariate autoregressive, no external features, no normalization (handles non-stationarity via differencing) |
 
-`is_day_off`：周末或公共假日标记为 1，否则为 0。`seq_len=48` 覆盖一整天，模型从历史波形学习日内周期和季节信息，`is_day_off` 提供日历跳变信息。
-
----
-
-## 统一评估指标
-
-所有模型在测试集上使用相同的 6 个指标：
-
-| 指标 | 含义 |
-|------|------|
-| MAE | 平均绝对误差 |
-| MAPE | 平均绝对百分比误差 (%) |
-| RMSE | 均方根误差 |
-| Gaussian NLL | 高斯负对数似然（评估概率校准质量） |
-| PICP | 预测区间覆盖概率 (%, 95% 区间) |
-| MPIW | 平均预测区间宽度 |
+`is_day_off`: weekend or public holiday marked as 1, otherwise 0. With `seq_len=48` covering a full day, the model learns intra-day cycles and seasonal patterns from historical waveforms; `is_day_off` provides calendar shift information.
 
 ---
 
-## 统一实验设置
+## Evaluation Metrics
 
-深度学习模型使用相同的超参数以保证公平对比：
+All models are evaluated on the test set using the same 6 metrics:
 
-| 参数 | 值 |
-|------|-----|
+| Metric | Description |
+|--------|-------------|
+| MAE | Mean Absolute Error |
+| MAPE | Mean Absolute Percentage Error (%) |
+| RMSE | Root Mean Square Error |
+| Gaussian NLL | Gaussian Negative Log-Likelihood (probabilistic calibration) |
+| PICP | Prediction Interval Coverage Probability (%, 95% interval) |
+| MPIW | Mean Prediction Interval Width |
+
+---
+
+## Unified Experiment Settings
+
+Deep learning models share the same hyperparameters for fair comparison:
+
+| Parameter | Value |
+|-----------|-------|
 | seed | 221 |
 | seq_len | 48 |
 | batch_size | 144 |
@@ -75,72 +77,64 @@
 
 ---
 
-## 模型架构
+## Model Architectures
 
 ### Transformer
 
-线性投影 → 正弦位置编码 → Transformer Encoder (2层, 4头, d_model=64, ff=128) → 取最后时间步 → 双头输出 (mu, var)
+Linear projection → Sinusoidal positional encoding → Transformer Encoder (2 layers, 4 heads, d_model=64, ff=128) → Last time step → Dual-head output (mu, var)
 
 ### LSTM
 
-线性投影 → LayerNorm → LSTM (2层, d_model=64) → 取最后时间步 → 双头输出 (mu, var)
+Linear projection → LSTM (2 layers, d_model=64) → LayerNorm → Last time step → Dual-head output (mu, var)
 
 ### CNN
 
-Conv1d (3层, hidden=128, BN+ReLU) → AdaptiveAvgPool1d → FC → 双头输出 (mu, var)
+Conv1d (3 layers, hidden=128, BN+ReLU) → AdaptiveAvgPool1d → FC → Dual-head output (mu, var)
 
 ### SARIMA
 
-在候选参数网格中通过 rolling daily validation 选择最优 (p,d,q)(P,D,Q,48) → 全训练集拟合 → rolling day-ahead 预测（每天预测 48 步，用真实值更新状态，固定参数）
+Grid search over candidate parameter specs via rolling daily validation → Select best (p,d,q)(P,D,Q,48) → Fit on full training set → Rolling day-ahead forecast (48 steps per day, update state with actuals, fixed parameters)
 
 ---
 
-## 环境配置与运行
+## Environment Setup and Running
 
-### 依赖
+### Dependencies
 
-基础环境 `comp0197-pt`（Python 3.12 + torch + torchvision + pillow），额外需要：
-- pandas
-- matplotlib
-- pyyaml
-
-SARIMA 额外需要：
-- statsmodels
-
-### 安装
+Base environment `comp0197-pt`, plus one additional package:
 
 ```bash
-micromamba create --name comp0197-pt python=3.12 -y
-micromamba activate comp0197-pt
-pip install torch torchvision pillow --index-url https://download.pytorch.org/whl/cpu
-pip install pandas matplotlib pyyaml statsmodels
+pip install statsmodels
 ```
 
-### 训练
+> `pyyaml` and `tqdm` are also used but are typically pre-installed in the `comp0197-pt` environment.
+
+### Running All Experiments
 
 ```bash
-cd elec_transformer
+cd code/
+python train.py --all
+```
 
-# Transformer
-python train.py --config configs/default.yaml
+This trains all 6 models, runs inference, and saves results (metrics + figures) to `results/`.
 
-# LSTM
+### Training a Single Model
+
+```bash
+cd code/
+
+# Example: LSTM
 python train.py --config configs/lstm.yaml
 
-# CNN
-python train.py --config configs/cnn.yaml
-
-# SARIMA
+# Example: SARIMA
 python train.py --config configs/sarima.yaml
 ```
 
-### 推理
+### Inference
 
 ```bash
-# 深度学习模型（将 <run_id> 替换为训练生成的时间戳）
-python test.py --config configs/default.yaml --checkpoint checkpoints/transformer_best_<run_id>.pt
-python test.py --config configs/lstm.yaml --checkpoint checkpoints/lstm_best_<run_id>.pt
-python test.py --config configs/cnn.yaml --checkpoint checkpoints/cnn_best_<run_id>.pt
+# Deep learning (replace <timestamp> with actual run ID)
+python test.py --config configs/lstm.yaml --checkpoint checkpoints/lstm_best_<timestamp>.pt
 
 # SARIMA
 python test.py --config configs/sarima.yaml --checkpoint checkpoints/sarima_best.pkl
@@ -148,50 +142,56 @@ python test.py --config configs/sarima.yaml --checkpoint checkpoints/sarima_best
 
 ---
 
-## 文件结构
+## Project Structure
 
 ```
 comp0197/
 ├── README.md
 ├── CHANGELOG.md
-└── elec_transformer/
+└── code/
+    ├── train.py                  # Training entry point (--all for all models)
+    ├── test.py                   # Inference entry point
+    ├── instruction.pdf           # Reproduction instructions
+    │
     ├── data/
     │   └── historic_demand_2009_2024_noNaN.csv
     │
     ├── configs/
-    │   ├── default.yaml          # Transformer
-    │   ├── lstm.yaml             # LSTM
-    │   ├── cnn.yaml              # CNN
-    │   └── sarima.yaml           # SARIMA
+    │   ├── transformer.yaml      # Transformer (probabilistic)
+    │   ├── lstm.yaml             # LSTM (probabilistic, primary model)
+    │   ├── cnn.yaml              # CNN (probabilistic)
+    │   ├── sarima.yaml           # SARIMA (statistical baseline)
+    │   ├── lstm_mse.yaml         # LSTM + MSE (deterministic baseline)
+    │   └── lstm_no_fe.yaml       # LSTM w/o feature engineering (ablation)
     │
     ├── src/
     │   ├── data/
-    │   │   ├── loader.py         # CSV 加载、清洗、数据划分
-    │   │   ├── feature.py        # is_day_off 特征（shift(-1) 对齐）
-    │   │   └── dataset.py        # 归一化、滑动窗口、DataLoader
+    │   │   ├── loader.py         # CSV loading, cleaning, data splitting
+    │   │   ├── feature.py        # is_day_off feature (shift(-1) aligned)
+    │   │   └── dataset.py        # Normalization, sliding window, DataLoader
     │   ├── models/
-    │   │   ├── __init__.py       # 模型注册表 + build_model
-    │   │   ├── base.py           # BaseModel(nn.Module) 基类
-    │   │   ├── transformer.py    # Transformer 模型
-    │   │   ├── lstm.py           # LSTM 模型
-    │   │   ├── cnn.py            # CNN 模型
-    │   │   └── sarima.py         # SARIMA 模型（不继承 BaseModel）
+    │   │   ├── __init__.py       # Model registry + build_model
+    │   │   ├── base.py           # BaseModel(nn.Module) base class
+    │   │   ├── transformer.py    # Transformer model
+    │   │   ├── lstm.py           # LSTM model
+    │   │   ├── cnn.py            # CNN model
+    │   │   ├── mamba.py          # Mamba (Selective SSM) model
+    │   │   └── sarima.py         # SARIMA model (does not inherit BaseModel)
     │   ├── training/
-    │   │   ├── trainer.py        # 训练循环、早停、checkpoint
-    │   │   └── loss.py           # 损失函数
+    │   │   ├── trainer.py        # Training loop, early stopping, checkpoint
+    │   │   └── loss.py           # Loss functions (GaussianNLL, MSEWrapper)
     │   └── evaluation/
-    │       ├── metrics.py        # MAE、MAPE、RMSE、Gaussian NLL、PICP、MPIW
-    │       └── visualize.py      # 可视化函数
+    │       ├── metrics.py        # MAE, MAPE, RMSE, Gaussian NLL, PICP, MPIW
+    │       └── visualize.py      # Visualization functions
     │
-    ├── train.py                  # 训练入口（深度学习 + SARIMA 双路径）
-    ├── test.py                   # 推理入口（深度学习 + SARIMA 双路径）
-    ├── checkpoints/              # 模型保存目录
-    └── logs/                     # 训练日志目录
+    ├── checkpoints/              # Saved model weights
+    ├── results/                  # Output metrics and figures
+    └── logs/                     # Training logs
 ```
 
-### 扩展新的深度学习模型
+### Adding a New Deep Learning Model
 
-只需两步，不需要修改 `train.py` 或 `test.py`：
+Two steps only — no changes to `train.py` or `test.py` needed:
 
-1. 在 `src/models/` 下新建模型文件，继承 `BaseModel`，加 `@register_model("名字")` 装饰器，实现 `forward(x) -> (mu, var)` 和 `from_config(cls, model_cfg, n_features)`
-2. 创建对应的 `configs/xxx.yaml`，设置 `model.type` 为注册名
+1. Create a new model file under `src/models/`, inherit from `BaseModel`, add the `@register_model("name")` decorator, and implement `forward(x) -> (mu, var)` and `from_config(cls, model_cfg, n_features)`.
+2. Create a corresponding `configs/xxx.yaml` with `model.type` set to the registered name.
