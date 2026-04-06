@@ -2,10 +2,11 @@
 Inference entry point: load checkpoint and predict on the test set.
 
 Usage:
-    python test.py --config configs/transformer.yaml --checkpoint checkpoints/transformer_best.pt
-    python test.py --config configs/sarima.yaml --checkpoint checkpoints/sarima_best.pkl
+    python test.py --config configs/lstm.yaml --checkpoint checkpoints/lstm_best_xxx.pt
+    python test.py --all                     # Test all models + summarize
 """
 import argparse
+import glob
 import json
 import os
 
@@ -20,6 +21,49 @@ from src.data.dataset import TimeSeriesDataset
 from src.models import build_model
 from src.evaluation.metrics import mae, mape, rmse, gaussian_nll, picp, mpiw
 from src.evaluation.visualize import setup_matplotlib, plot_predictions, plot_detail
+
+
+# All experiment configurations
+ALL_CONFIGS = [
+    "configs/transformer.yaml",
+    "configs/lstm.yaml",
+    "configs/cnn.yaml",
+    "configs/sarima.yaml",
+    "configs/lstm_mse.yaml",
+    "configs/lstm_no_fe.yaml",
+    "configs/transformer_mse.yaml",
+    "configs/transformer_no_fe.yaml",
+]
+
+CHECKPOINT_PATTERNS = {
+    "configs/transformer.yaml":        "checkpoints/transformer_best_*.pt",
+    "configs/lstm.yaml":               "checkpoints/lstm_best_*.pt",
+    "configs/cnn.yaml":                "checkpoints/cnn_best_*.pt",
+    "configs/sarima.yaml":             "checkpoints/sarima_best.pkl",
+    "configs/lstm_mse.yaml":           "checkpoints/lstm_mse_best_*.pt",
+    "configs/lstm_no_fe.yaml":         "checkpoints/lstm_no_fe_best_*.pt",
+    "configs/transformer_mse.yaml":    "checkpoints/transformer_mse_best_*.pt",
+    "configs/transformer_no_fe.yaml":  "checkpoints/transformer_no_fe_best_*.pt",
+}
+
+
+def find_latest_checkpoint(pattern):
+    """Return the most recently modified file matching *pattern*, or None.
+
+    Parameters
+    ----------
+    pattern : str
+        Glob pattern for checkpoint files.
+
+    Returns
+    -------
+    str or None
+        Path to the latest checkpoint, or ``None`` if no match.
+    """
+    matches = glob.glob(pattern)
+    if not matches:
+        return None
+    return max(matches, key=os.path.getmtime)
 
 
 def get_experiment_name(cfg):
@@ -47,7 +91,7 @@ def get_experiment_name(cfg):
     return name
 
 
-def main(config_path: str, checkpoint_path: str):
+def test_single(config_path: str, checkpoint_path: str):
     """Run inference on the test set, compute metrics, and save figures.
 
     Parameters
@@ -178,12 +222,74 @@ def main(config_path: str, checkpoint_path: str):
     print(f"Figures saved to {out_dir}/")
 
     import matplotlib.pyplot as plt
-    plt.show()
+    plt.close("all")
+
+
+def summarize():
+    """Read all results/*/metrics.json and print + save summary table."""
+    results_files = sorted(glob.glob("results/*/metrics.json"))
+    if not results_files:
+        print("No results found.")
+        return
+
+    rows = []
+    for path in results_files:
+        exp_name = os.path.basename(os.path.dirname(path))
+        with open(path) as f:
+            m = json.load(f)
+        m["Experiment"] = exp_name
+        rows.append(m)
+
+    df = pd.DataFrame(rows).set_index("Experiment")
+    df = df[["MAE", "MAPE", "RMSE", "NLL", "PICP", "MPIW"]]
+
+    print(df.to_string())
+
+    summary_path = os.path.join("results", "summary.csv")
+    df.to_csv(summary_path)
+    print(f"\nSummary saved to {summary_path}")
+
+
+def run_all():
+    """Test all models with available checkpoints, then summarize."""
+    valid_configs = [c for c in ALL_CONFIGS if os.path.exists(c)]
+    total = len(valid_configs)
+
+    for i, config in enumerate(valid_configs, 1):
+        pattern = CHECKPOINT_PATTERNS.get(config)
+        if not pattern:
+            continue
+        ckpt = find_latest_checkpoint(pattern)
+        if ckpt is None:
+            print(f"SKIP: no checkpoint for {config}")
+            continue
+        print(f"\n{'='*60}")
+        print(f"[{i}/{total}] TESTING: {config}")
+        print(f"{'='*60}")
+        test_single(config, ckpt)
+
+    # Summary
+    print(f"\n{'='*60}")
+    print("SUMMARY")
+    print(f"{'='*60}")
+    summarize()
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--config", default="configs/transformer.yaml")
-    parser.add_argument("--checkpoint", default="checkpoints/transformer_best.pt")
+    parser.add_argument("--checkpoint", default=None)
+    parser.add_argument("--all", action="store_true", help="Test all models + summarize")
     args = parser.parse_args()
-    main(args.config, args.checkpoint)
+
+    if args.all:
+        run_all()
+    else:
+        # Auto-find checkpoint if not specified
+        if args.checkpoint is None:
+            pattern = CHECKPOINT_PATTERNS.get(args.config)
+            if pattern:
+                args.checkpoint = find_latest_checkpoint(pattern)
+            if args.checkpoint is None:
+                parser.error(f"No checkpoint found for {args.config}. Specify --checkpoint.")
+        test_single(args.config, args.checkpoint)

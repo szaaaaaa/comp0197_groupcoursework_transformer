@@ -3,17 +3,12 @@ Training entry point.
 
 Usage:
     python train.py --config configs/lstm.yaml       # Train a single model
-    python train.py --all                            # Train all models + inference + summary
+    python train.py --all                            # Train all models
 """
 import argparse
-import glob
-import json
 import os
-import subprocess
-import sys
 
 import numpy as np
-import pandas as pd
 import torch
 import yaml
 
@@ -32,6 +27,8 @@ ALL_CONFIGS = [
     "configs/sarima.yaml",
     "configs/lstm_mse.yaml",
     "configs/lstm_no_fe.yaml",
+    "configs/transformer_mse.yaml",
+    "configs/transformer_no_fe.yaml",
 ]
 
 
@@ -125,99 +122,19 @@ def train_single(config_path: str):
     print(f"\nTraining complete: {config_path}")
 
 
-# ---- --all mode ----
-
-CHECKPOINT_PATTERNS = {
-    "configs/transformer.yaml":    "checkpoints/transformer_best_*.pt",
-    "configs/lstm.yaml":           "checkpoints/lstm_best_*.pt",
-    "configs/cnn.yaml":            "checkpoints/cnn_best_*.pt",
-    "configs/sarima.yaml":         "checkpoints/sarima_best.pkl",
-    "configs/lstm_mse.yaml":       "checkpoints/lstm_mse_best_*.pt",
-    "configs/lstm_no_fe.yaml":     "checkpoints/lstm_no_fe_best_*.pt",
-}
-
-
-def find_latest_checkpoint(pattern):
-    """Return the most recently modified file matching *pattern*, or None.
-
-    Parameters
-    ----------
-    pattern : str
-        Glob pattern for checkpoint files.
-
-    Returns
-    -------
-    str or None
-        Path to the latest checkpoint, or ``None`` if no match.
-    """
-    matches = glob.glob(pattern)
-    if not matches:
-        return None
-    return max(matches, key=os.path.getmtime)
-
-
-def run_all():
-    """Train all models, run inference, and summarize results."""
-    valid_configs = [c for c in ALL_CONFIGS if os.path.exists(c)]
-    total = len(valid_configs)
-
-    # 1. Train
-    for i, config in enumerate(valid_configs, 1):
-        print(f"\n{'='*60}")
-        print(f"[{i}/{total}] TRAINING: {config}")
-        print(f"{'='*60}")
-        train_single(config)
-
-    # 2. Inference
-    for i, config in enumerate(valid_configs, 1):
-        pattern = CHECKPOINT_PATTERNS.get(config)
-        if not pattern:
-            continue
-        ckpt = find_latest_checkpoint(pattern)
-        if ckpt is None:
-            print(f"SKIP test: no checkpoint for {config}")
-            continue
-        print(f"\n{'='*60}")
-        print(f"[{i}/{total}] TESTING: {config}")
-        print(f"{'='*60}")
-        subprocess.run([sys.executable, "test.py", "--config", config, "--checkpoint", ckpt])
-
-    # 3. Summary
-    print(f"\n{'='*60}")
-    print("SUMMARY")
-    print(f"{'='*60}")
-
-    results_files = sorted(glob.glob("results/*/metrics.json"))
-    if not results_files:
-        print("No results found.")
-        return
-
-    rows = []
-    for path in results_files:
-        exp_name = os.path.basename(os.path.dirname(path))
-        with open(path) as f:
-            m = json.load(f)
-        m["Experiment"] = exp_name
-        rows.append(m)
-
-    import pandas as pd
-    df = pd.DataFrame(rows).set_index("Experiment")
-    df = df[["MAE", "MAPE", "RMSE", "NLL", "PICP", "MPIW"]]
-
-    print(df.to_string())
-
-    summary_path = os.path.join("results", "summary.csv")
-    df.to_csv(summary_path)
-    print(f"\nSummary saved to {summary_path}")
-
-
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--config", default="configs/transformer.yaml", help="Single model config file")
-    parser.add_argument("--all", action="store_true", help="Train all models + inference + summary")
+    parser.add_argument("--all", action="store_true", help="Train all models")
     args = parser.parse_args()
 
     if args.all:
-        run_all()
+        valid_configs = [c for c in ALL_CONFIGS if os.path.exists(c)]
+        total = len(valid_configs)
+        for i, config in enumerate(valid_configs, 1):
+            print(f"\n{'='*60}")
+            print(f"[{i}/{total}] TRAINING: {config}")
+            print(f"{'='*60}")
+            train_single(config)
     else:
         train_single(args.config)

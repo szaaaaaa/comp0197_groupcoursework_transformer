@@ -503,12 +503,18 @@ def predict_sarima(fitted_or_params, spec, train_series, test_series):
     """
     _configure_warnings()
 
-    if isinstance(fitted_or_params, list):
-        # Rebuild from saved parameters
-        result = _rebuild_from_params(train_series, spec, fitted_or_params)
+    # Use only the tail of training series to avoid memory issues
+    # 5760 steps = 120 days * 48 steps/day, enough for state convergence
+    max_history = SEASONAL_PERIOD * 120
+    if len(train_series) > max_history:
+        train_tail = train_series.iloc[-max_history:]
     else:
-        # Use rebuild to ensure clean state
-        result = _rebuild_from_params(train_series, spec, fitted_or_params.params)
+        train_tail = train_series
 
-    forecast_df = rolling_day_ahead_forecast(result, train_series, test_series)
+    if isinstance(fitted_or_params, list):
+        result = _rebuild_from_params(train_tail, spec, fitted_or_params)
+    else:
+        result = _rebuild_from_params(train_tail, spec, fitted_or_params.params)
+
+    forecast_df = rolling_day_ahead_forecast(result, train_tail, test_series)
     return forecast_df

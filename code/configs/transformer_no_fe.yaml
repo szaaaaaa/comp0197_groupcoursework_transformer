@@ -1,0 +1,40 @@
+# ============================================================
+# Transformer without feature engineering (ablation study)
+# To validate the contribution of the is_day_off feature
+# ============================================================
+
+seed: 221
+
+# --- Data ---
+data:
+  csv_path: data/historic_demand_2009_2024_noNaN.csv
+  date_start: "2019-01-01"
+  date_end: "2024-12-31"
+  target: tsd
+  threshold_date_1: "01-01-2023"
+  threshold_date_2: "01-01-2024"
+
+# --- Feature engineering (disabled, using only historical tsd) ---
+features:
+  enabled: false
+
+# --- Sequence and batch ---
+seq_len: 48
+batch_size: 144
+
+# --- Model (identical to transformer.yaml) ---
+model:
+  type: transformer
+  d_model: 64
+  nhead: 4
+  num_layers: 2
+  dim_feedforward: 128
+  dropout: 0.5
+
+# --- Training ---
+training:
+  num_epochs: 50
+  learning_rate: 5.0e-4
+  patience: 12
+  lr_factor: 0.5
+  lr_patience: 5
