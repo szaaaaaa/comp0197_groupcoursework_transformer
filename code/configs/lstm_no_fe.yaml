@@ -1,9 +1,11 @@
 # ============================================================
-# 无特征工程配置 —— 仅用历史 TSD 预测
+# LSTM without feature engineering (ablation study)
+# To validate the contribution of the is_day_off feature
 # ============================================================
 
 seed: 221
 
+# --- Data ---
 data:
   csv_path: data/historic_demand_2009_2024_noNaN.csv
   date_start: "2019-01-01"
@@ -12,22 +14,23 @@ data:
   threshold_date_1: "01-01-2023"
   threshold_date_2: "01-01-2024"
 
+# --- Feature engineering (disabled, using only historical tsd) ---
 features:
   enabled: false
-  columns: []
-  cols_to_scale: all
 
+# --- Sequence and batch ---
 seq_len: 48
 batch_size: 144
 
+# --- Model (identical to lstm.yaml) ---
 model:
-  type: transformer
+  type: lstm
   d_model: 64
-  nhead: 4
   num_layers: 2
-  dim_feedforward: 128
   dropout: 0.5
+  bidirectional: false
 
+# --- Training ---
 training:
   num_epochs: 50
   learning_rate: 5.0e-4

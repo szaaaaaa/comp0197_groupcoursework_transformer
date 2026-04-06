@@ -2,7 +2,18 @@ MODEL_REGISTRY = {}
 
 
 def register_model(name):
-    """装饰器：将模型类注册到全局字典。"""
+    """Register a model class into the global registry.
+
+    Parameters
+    ----------
+    name : str
+        Key used to look up the model class.
+
+    Returns
+    -------
+    callable
+        Class decorator.
+    """
     def decorator(cls):
         MODEL_REGISTRY[name] = cls
         return cls
@@ -10,9 +21,32 @@ def register_model(name):
 
 
 def build_model(cfg, n_features, device):
-    """根据 config 自动查找并构建模型，无需硬编码。"""
+    """Auto-discover and build a model from config.
+
+    All modules under ``src/models/`` are imported to trigger
+    ``@register_model`` decorators before looking up the requested type.
+
+    Parameters
+    ----------
+    cfg : dict
+        Full experiment configuration (must contain ``cfg["model"]["type"]``).
+    n_features : int
+        Number of input features.
+    device : torch.device
+        Device to place the model on.
+
+    Returns
+    -------
+    nn.Module
+        Constructed model on *device*.
+
+    Raises
+    ------
+    ValueError
+        If the requested model type is not registered.
+    """
     import torch
-    # 自动导入 src/models/ 下所有模块，触发 @register_model
+    # Auto-import all modules under src/models/ to trigger @register_model
     import importlib
     import pkgutil
     import src.models as pkg

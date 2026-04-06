@@ -1,12 +1,16 @@
 """
-入口脚本：加载 config → 数据 → 模型 → 训练 → 评估
+Training entry point.
 
-用法:
-    python train.py                          # 使用默认配置（含特征工程）
-    python train.py --config configs/no_fe.yaml  # 使用指定配置
+Usage:
+    python train.py --config configs/lstm.yaml       # Train a single model
+    python train.py --all                            # Train all models + inference + summary
 """
 import argparse
+import glob
+import json
 import os
+import subprocess
+import sys
 
 import numpy as np
 import pandas as pd
@@ -19,31 +23,40 @@ from src.data.dataset import TimeSeriesDataset
 from src.models import build_model
 from src.training.loss import get_criterion
 from src.training.trainer import Trainer
-from src.evaluation.metrics import mae, mape, rmse, gaussian_nll, picp, mpiw
-from src.evaluation.visualize import (
-    setup_matplotlib, plot_split, plot_loss_curve, plot_predictions, plot_detail,
-)
+
+# All experiment configurations
+ALL_CONFIGS = [
+    "configs/transformer.yaml",
+    "configs/lstm.yaml",
+    "configs/cnn.yaml",
+    "configs/sarima.yaml",
+    "configs/lstm_mse.yaml",
+    "configs/lstm_no_fe.yaml",
+]
 
 
-def main(config_path: str):
-    # 加载配置
+def train_single(config_path: str):
+    """Train a single model and save its checkpoint.
+
+    Parameters
+    ----------
+    config_path : str
+        Path to the YAML configuration file.
+    """
     with open(config_path, encoding="utf-8") as f:
         cfg = yaml.safe_load(f)
 
-    # 随机种子
     seed = cfg["seed"]
     np.random.seed(seed)
-
     model_type = cfg["model"]["type"]
 
-    # ---- 数据加载与清洗 ----
+    # ---- Data ----
     df = load_and_clean(
         cfg["data"]["csv_path"],
         cfg["data"]["date_start"],
         cfg["data"]["date_end"],
     )
 
-    # ---- 特征工程（可选） ----
     feature_cfg = cfg["features"]
     if feature_cfg["enabled"]:
         df = create_features(df)
@@ -55,7 +68,6 @@ def main(config_path: str):
         features = []
         cols_to_scale = "all"
 
-    # ---- 数据划分 ----
     train_df, val_df, test_df = split_data(
         df, cfg["data"]["threshold_date_1"], cfg["data"]["threshold_date_2"]
     )
@@ -64,53 +76,16 @@ def main(config_path: str):
     target = cfg["data"]["target"]
 
     if model_type == "sarima":
-        # ============ SARIMA 路径 ============
-        from src.models.sarima import train_sarima, predict_sarima
-
-        fitted, best_spec, full_train, ckpt_path = train_sarima(
-            train_df[target], val_df[target], cfg
-        )
-
-        # 预测
-        test_series = test_df[target]
-        forecast_df = predict_sarima(fitted, best_spec, full_train, test_series)
-
-        # 构建统一结果 DataFrame
-        result = pd.DataFrame({
-            "tsd": forecast_df["actual"].values,
-            "pred": forecast_df["prediction"].values,
-            "std": forecast_df["prediction_std"].values,
-        }, index=forecast_df.index)
-
-        # 评估
-        mape_val = mape(result["tsd"], result["pred"])
-        rmse_val = rmse(result["tsd"], result["pred"])
-        mae_val = mae(result["tsd"], result["pred"])
-        nll_val = gaussian_nll(result["tsd"], result["pred"], result["std"])
-        picp_val = picp(result["tsd"], result["pred"], result["std"])
-        mpiw_val = mpiw(result["std"])
-
-        print(f"\nMAE:  {mae_val:.2f} MW")
-        print(f"MAPE: {mape_val:.2f}%")
-        print(f"RMSE: {rmse_val:.2f} MW")
-        print(f"NLL:  {nll_val:.4f}")
-        print(f"PICP: {picp_val:.2f}%")
-        print(f"MPIW: {mpiw_val:.2f} MW")
-
-        # 可视化
-        setup_matplotlib()
-        plot_predictions(result)
-        plot_detail(result, "08-01-2024", "08-14-2024")
-        import matplotlib.pyplot as plt
-        plt.show()
+        # ============ SARIMA path ============
+        from src.models.sarima import train_sarima
+        train_sarima(train_df[target], val_df[target], cfg)
 
     else:
-        # ============ 深度学习路径 ============
+        # ============ Deep learning path ============
         torch.manual_seed(seed)
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         print(f"Device: {device}")
 
-        # 构建 Dataset 与 DataLoader
         dataset = TimeSeriesDataset(
             train_df, val_df, test_df,
             features=features,
@@ -119,84 +94,130 @@ def main(config_path: str):
             seq_len=cfg["seq_len"],
             batch_size=cfg["batch_size"],
         )
-        train_loader, val_loader, test_loader = dataset.get_loaders()
+        train_loader, val_loader, _ = dataset.get_loaders()
         print(f"Features: {dataset.n_features}, Seq len: {cfg['seq_len']}")
 
-        # 构建模型
         model = build_model(cfg, dataset.n_features, device)
         print(f"Parameters: {sum(p.numel() for p in model.parameters() if p.requires_grad):,}")
 
-        # 训练
         tcfg = cfg["training"]
-        criterion = get_criterion("gaussian_nll")
+        loss_name = tcfg.get("loss", "gaussian_nll")
+        criterion = get_criterion(loss_name)
         optimizer = torch.optim.Adam(model.parameters(), lr=tcfg["learning_rate"])
         scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
             optimizer, mode="min", factor=tcfg["lr_factor"], patience=tcfg["lr_patience"]
         )
 
-        ckpt_path = os.path.join("checkpoints", f"{model_type}_best.pt")
+        ckpt_suffix = f"_{loss_name}" if loss_name != "gaussian_nll" else ""
+        fe_suffix = "" if feature_cfg["enabled"] else "_no_fe"
+        ckpt_path = os.path.join("checkpoints", f"{model_type}{ckpt_suffix}{fe_suffix}_best.pt")
         trainer = Trainer(
             model, criterion, optimizer, scheduler, device,
             patience=tcfg["patience"],
             checkpoint_path=ckpt_path,
+            loss_name=loss_name.upper(),
         )
         trainer.train(train_loader, val_loader, tcfg["num_epochs"])
 
-        # 预测与评估
-        model.eval()
-        mu_list, std_list = [], []
-        with torch.no_grad():
-            for X_batch, _ in test_loader:
-                X_batch = X_batch.to(device)
-                mu, var = model(X_batch)
-                mu_list.append(mu.cpu().numpy())
-                std_list.append(torch.sqrt(var).cpu().numpy())
+        # Save training log
+        trainer.save_log(config=cfg)
 
-        pred_scaled = np.concatenate(mu_list)
-        std_scaled = np.concatenate(std_list)
-        pred, std = dataset.inverse_transform(pred_scaled, std_scaled)
+    print(f"\nTraining complete: {config_path}")
 
-        result = pd.DataFrame({
-            "tsd": dataset.test_actual,
-            "pred": pred,
-            "std": std,
-        }, index=dataset.test_index)
 
-        mape_val = mape(result["tsd"], result["pred"])
-        rmse_val = rmse(result["tsd"], result["pred"])
-        print(f"\nMAPE: {mape_val:.2f}%")
-        print(f"RMSE: {rmse_val:.2f} MW")
+# ---- --all mode ----
 
-        # 保存日志
-        trainer.save_log(
-            metrics={"mape": round(mape_val, 2), "rmse": round(rmse_val, 2)},
-            config=cfg,
-        )
+CHECKPOINT_PATTERNS = {
+    "configs/transformer.yaml":    "checkpoints/transformer_best_*.pt",
+    "configs/lstm.yaml":           "checkpoints/lstm_best_*.pt",
+    "configs/cnn.yaml":            "checkpoints/cnn_best_*.pt",
+    "configs/sarima.yaml":         "checkpoints/sarima_best.pkl",
+    "configs/lstm_mse.yaml":       "checkpoints/lstm_mse_best_*.pt",
+    "configs/lstm_no_fe.yaml":     "checkpoints/lstm_no_fe_best_*.pt",
+}
 
-        # 可视化
-        setup_matplotlib()
-        figures = {
-            "split.png": plot_split(
-                train_df,
-                val_df,
-                test_df,
-                cfg["data"]["threshold_date_1"],
-                cfg["data"]["threshold_date_2"],
-            ),
-            "loss_curve.png": plot_loss_curve(trainer.train_losses, trainer.val_losses),
-            "predictions.png": plot_predictions(result),
-            "detail_2024-08-01_2024-08-14.png": plot_detail(result, "08-01-2024", "08-14-2024"),
-        }
 
-        for filename, fig in figures.items():
-            fig.savefig(os.path.join(trainer.run_dir, filename), dpi=200, bbox_inches="tight")
+def find_latest_checkpoint(pattern):
+    """Return the most recently modified file matching *pattern*, or None.
 
-        import matplotlib.pyplot as plt
-        plt.show()
+    Parameters
+    ----------
+    pattern : str
+        Glob pattern for checkpoint files.
+
+    Returns
+    -------
+    str or None
+        Path to the latest checkpoint, or ``None`` if no match.
+    """
+    matches = glob.glob(pattern)
+    if not matches:
+        return None
+    return max(matches, key=os.path.getmtime)
+
+
+def run_all():
+    """Train all models, run inference, and summarize results."""
+    valid_configs = [c for c in ALL_CONFIGS if os.path.exists(c)]
+    total = len(valid_configs)
+
+    # 1. Train
+    for i, config in enumerate(valid_configs, 1):
+        print(f"\n{'='*60}")
+        print(f"[{i}/{total}] TRAINING: {config}")
+        print(f"{'='*60}")
+        train_single(config)
+
+    # 2. Inference
+    for i, config in enumerate(valid_configs, 1):
+        pattern = CHECKPOINT_PATTERNS.get(config)
+        if not pattern:
+            continue
+        ckpt = find_latest_checkpoint(pattern)
+        if ckpt is None:
+            print(f"SKIP test: no checkpoint for {config}")
+            continue
+        print(f"\n{'='*60}")
+        print(f"[{i}/{total}] TESTING: {config}")
+        print(f"{'='*60}")
+        subprocess.run([sys.executable, "test.py", "--config", config, "--checkpoint", ckpt])
+
+    # 3. Summary
+    print(f"\n{'='*60}")
+    print("SUMMARY")
+    print(f"{'='*60}")
+
+    results_files = sorted(glob.glob("results/*/metrics.json"))
+    if not results_files:
+        print("No results found.")
+        return
+
+    rows = []
+    for path in results_files:
+        exp_name = os.path.basename(os.path.dirname(path))
+        with open(path) as f:
+            m = json.load(f)
+        m["Experiment"] = exp_name
+        rows.append(m)
+
+    import pandas as pd
+    df = pd.DataFrame(rows).set_index("Experiment")
+    df = df[["MAE", "MAPE", "RMSE", "NLL", "PICP", "MPIW"]]
+
+    print(df.to_string())
+
+    summary_path = os.path.join("results", "summary.csv")
+    df.to_csv(summary_path)
+    print(f"\nSummary saved to {summary_path}")
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--config", default="configs/default.yaml")
+    parser.add_argument("--config", default="configs/transformer.yaml", help="Single model config file")
+    parser.add_argument("--all", action="store_true", help="Train all models + inference + summary")
     args = parser.parse_args()
-    main(args.config)
+
+    if args.all:
+        run_all()
+    else:
+        train_single(args.config)

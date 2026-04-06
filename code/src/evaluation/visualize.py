@@ -3,7 +3,7 @@ import matplotlib.pyplot as plt
 
 
 def setup_matplotlib():
-    """设置全局字体和字号。"""
+    """Set global matplotlib font and font sizes."""
     small, medium, large = 12, 14, 16
     matplotlib.rc("font", size=small)
     matplotlib.rc("axes", titlesize=large, labelsize=medium)
@@ -13,7 +13,19 @@ def setup_matplotlib():
 
 
 def plot_time_series(df, target="tsd"):
-    """时间序列总览。"""
+    """Plot a time series overview.
+
+    Parameters
+    ----------
+    df : pd.DataFrame
+        DataFrame with datetime index.
+    target : str
+        Column to plot.
+
+    Returns
+    -------
+    matplotlib.figure.Figure
+    """
     fig, ax = plt.subplots(figsize=(15, 5))
     ax.plot(df.index, df[target], ".", markersize=0.5, alpha=0.3)
     ax.set_xlabel("Date")
@@ -23,7 +35,21 @@ def plot_time_series(df, target="tsd"):
 
 
 def plot_split(train_df, val_df, test_df, threshold_1, threshold_2, target="tsd"):
-    """Train / Val / Test 数据划分可视化。"""
+    """Visualize the train / val / test data split.
+
+    Parameters
+    ----------
+    train_df, val_df, test_df : pd.DataFrame
+        Split DataFrames.
+    threshold_1, threshold_2 : str
+        Date boundaries shown as vertical lines.
+    target : str
+        Column to plot.
+
+    Returns
+    -------
+    matplotlib.figure.Figure
+    """
     fig, ax = plt.subplots(figsize=(15, 5))
     train_df[target].plot(ax=ax, label="Train", style=".", markersize=0.5)
     val_df[target].plot(ax=ax, label="Validation", style=".", markersize=0.5)
@@ -37,7 +63,17 @@ def plot_split(train_df, val_df, test_df, threshold_1, threshold_2, target="tsd"
 
 
 def plot_loss_curve(train_losses, val_losses):
-    """训练和验证损失曲线。"""
+    """Plot training and validation loss curves.
+
+    Parameters
+    ----------
+    train_losses, val_losses : list of float
+        Per-epoch loss values.
+
+    Returns
+    -------
+    matplotlib.figure.Figure
+    """
     fig, ax = plt.subplots(figsize=(10, 6))
     epochs = range(1, len(train_losses) + 1)
     ax.plot(epochs, train_losses, label="Train Loss")
@@ -50,7 +86,19 @@ def plot_loss_curve(train_losses, val_losses):
 
 
 def plot_predictions(result_frame, title="Test Set Predictions with Uncertainty"):
-    """测试集预测对比（含 95% 置信区间）。"""
+    """Plot test-set predictions with 95 % confidence interval.
+
+    Parameters
+    ----------
+    result_frame : pd.DataFrame
+        Must contain columns ``tsd``, ``pred``, ``std``.
+    title : str
+        Figure title.
+
+    Returns
+    -------
+    matplotlib.figure.Figure
+    """
     fig, ax = plt.subplots(figsize=(15, 5))
     ax.plot(result_frame.index, result_frame["tsd"], "o", markersize=1, alpha=0.3, label="Actual")
     ax.plot(result_frame.index, result_frame["pred"], "o", markersize=1, alpha=0.3, label="Prediction (μ)")
@@ -68,7 +116,19 @@ def plot_predictions(result_frame, title="Test Set Predictions with Uncertainty"
 
 
 def plot_detail(result_frame, begin, end):
-    """两周细节对比。"""
+    """Plot a zoomed-in two-week detail comparison.
+
+    Parameters
+    ----------
+    result_frame : pd.DataFrame
+        Must contain columns ``tsd``, ``pred``, ``std``.
+    begin, end : str
+        Date strings defining the detail window.
+
+    Returns
+    -------
+    matplotlib.figure.Figure
+    """
     mask = (result_frame.index > begin) & (result_frame.index < end)
     sub = result_frame.loc[mask]
 

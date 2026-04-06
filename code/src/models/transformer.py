@@ -7,7 +7,15 @@ from . import register_model
 
 
 class PositionalEncoding(nn.Module):
-    """正弦-余弦位置编码"""
+    """Sinusoidal positional encoding.
+
+    Parameters
+    ----------
+    d_model : int
+        Embedding dimension.
+    max_len : int
+        Maximum sequence length supported.
+    """
 
     def __init__(self, d_model, max_len=5000):
         super().__init__()
@@ -27,11 +35,28 @@ class PositionalEncoding(nn.Module):
 
 @register_model("transformer")
 class TimeSeriesTransformer(BaseModel):
-    """基于 Transformer Encoder 的时序预测模型。
+    """Transformer Encoder based time series forecasting model.
 
-    数据流: 输入(batch, seq_len, n_features)
-        -> Linear 投影 -> 位置编码 -> Transformer Encoder x N
-        -> 取最后时间步 -> mu_head / logvar_head -> (mu, var)
+    Data flow::
+
+        input(batch, seq_len, n_features)
+        -> Linear projection -> Positional encoding -> Transformer Encoder x N
+        -> last time step -> mu_head / logvar_head -> (mu, var)
+
+    Parameters
+    ----------
+    n_features : int
+        Number of input features.
+    d_model : int
+        Model embedding dimension.
+    nhead : int
+        Number of attention heads.
+    num_layers : int
+        Number of Transformer encoder layers.
+    dim_feedforward : int
+        Hidden dimension of the feed-forward network.
+    dropout : float
+        Dropout rate.
     """
 
     def __init__(self, n_features, d_model, nhead, num_layers, dim_feedforward, dropout):
@@ -62,6 +87,20 @@ class TimeSeriesTransformer(BaseModel):
         )
 
     def forward(self, x):
+        """Forward pass.
+
+        Parameters
+        ----------
+        x : torch.Tensor, shape (batch, seq_len, n_features)
+            Input time series.
+
+        Returns
+        -------
+        mu : torch.Tensor, shape (batch,)
+            Predicted mean.
+        var : torch.Tensor, shape (batch,)
+            Predicted variance.
+        """
         x = self.input_proj(x)
         x = self.pos_enc(x)
         x = self.encoder(x)

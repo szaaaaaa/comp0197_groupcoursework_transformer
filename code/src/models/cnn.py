@@ -7,11 +7,22 @@ from . import register_model
 
 @register_model("cnn")
 class TimeSeriesCNN(BaseModel):
-    """基于 1D-CNN 的时序预测模型。
+    """1D-CNN based time series forecasting model.
 
-    数据流: 输入(batch, seq_len, n_features)
+    Data flow::
+
+        input(batch, seq_len, n_features)
         -> permute -> Conv1d x 3 -> AdaptiveAvgPool1d
         -> FC -> mu_head / logvar_head -> (mu, var)
+
+    Parameters
+    ----------
+    n_features : int
+        Number of input features (channels for Conv1d).
+    hidden_dim : int
+        Number of filters in the first two convolutional layers.
+    dropout : float
+        Dropout rate.
     """
 
     def __init__(self, n_features, hidden_dim=128, dropout=0.2):
@@ -44,11 +55,21 @@ class TimeSeriesCNN(BaseModel):
         self.logvar_head = nn.Linear(hidden_dim, 1)
 
     def forward(self, x):
+        """Forward pass.
+
+        Parameters
+        ----------
+        x : torch.Tensor, shape (batch, seq_len, n_features)
+            Input time series.
+
+        Returns
+        -------
+        mu : torch.Tensor, shape (batch,)
+            Predicted mean.
+        var : torch.Tensor, shape (batch,)
+            Predicted variance.
         """
-        x: (batch, seq_len, n_features)
-        返回: (mu, var)，各 shape 为 (batch,)
-        """
-        # Conv1d 需要 (batch, channels, seq_len)
+        # Conv1d expects (batch, channels, seq_len)
         x = x.permute(0, 2, 1)
 
         x = self.dropout1(self.relu1(self.bn1(self.conv1(x))))

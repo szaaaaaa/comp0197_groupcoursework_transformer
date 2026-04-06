@@ -1,11 +1,13 @@
 """
-推理入口：加载 checkpoint 对测试集进行预测。
+Inference entry point: load checkpoint and predict on the test set.
 
-用法:
-    python test.py --config configs/default.yaml --checkpoint checkpoints/transformer_best.pt
+Usage:
+    python test.py --config configs/transformer.yaml --checkpoint checkpoints/transformer_best.pt
     python test.py --config configs/sarima.yaml --checkpoint checkpoints/sarima_best.pkl
 """
 import argparse
+import json
+import os
 
 import numpy as np
 import pandas as pd
@@ -20,15 +22,54 @@ from src.evaluation.metrics import mae, mape, rmse, gaussian_nll, picp, mpiw
 from src.evaluation.visualize import setup_matplotlib, plot_predictions, plot_detail
 
 
+def get_experiment_name(cfg):
+    """Generate experiment name from config for the output directory.
+
+    Parameters
+    ----------
+    cfg : dict
+        Full experiment configuration.
+
+    Returns
+    -------
+    str
+        Experiment name (e.g. ``"lstm"``, ``"lstm_mse"``, ``"lstm_no_fe"``).
+    """
+    model_type = cfg["model"]["type"]
+    loss_name = cfg.get("training", {}).get("loss", "gaussian_nll")
+    fe = cfg["features"]["enabled"]
+
+    name = model_type
+    if loss_name != "gaussian_nll":
+        name += f"_{loss_name}"
+    if not fe and model_type != "sarima":
+        name += "_no_fe"
+    return name
+
+
 def main(config_path: str, checkpoint_path: str):
+    """Run inference on the test set, compute metrics, and save figures.
+
+    Parameters
+    ----------
+    config_path : str
+        Path to the YAML configuration file.
+    checkpoint_path : str
+        Path to the saved model checkpoint.
+    """
     with open(config_path, encoding="utf-8") as f:
         cfg = yaml.safe_load(f)
 
     np.random.seed(cfg["seed"])
 
     model_type = cfg["model"]["type"]
+    exp_name = get_experiment_name(cfg)
 
-    # 数据
+    # Output directory
+    out_dir = os.path.join("results", exp_name)
+    os.makedirs(out_dir, exist_ok=True)
+
+    # Data
     df = load_and_clean(cfg["data"]["csv_path"], cfg["data"]["date_start"], cfg["data"]["date_end"])
 
     feature_cfg = cfg["features"]
@@ -49,7 +90,7 @@ def main(config_path: str, checkpoint_path: str):
     target = cfg["data"]["target"]
 
     if model_type == "sarima":
-        # ============ SARIMA 路径 ============
+        # ============ SARIMA path ============
         from src.models.sarima import load_model, predict_sarima
 
         spec, params = load_model(checkpoint_path)
@@ -65,7 +106,7 @@ def main(config_path: str, checkpoint_path: str):
         }, index=forecast_df.index)
 
     else:
-        # ============ 深度学习路径 ============
+        # ============ Deep learning path ============
         torch.manual_seed(cfg["seed"])
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -102,25 +143,47 @@ def main(config_path: str, checkpoint_path: str):
             "std": std,
         }, index=dataset.test_index)
 
-    # ---- 统一评估 ----
-    print(f"MAE:  {mae(result['tsd'], result['pred']):.2f} MW")
-    print(f"MAPE: {mape(result['tsd'], result['pred']):.2f}%")
-    print(f"RMSE: {rmse(result['tsd'], result['pred']):.2f} MW")
-    print(f"NLL:  {gaussian_nll(result['tsd'], result['pred'], result['std']):.4f}")
-    print(f"PICP: {picp(result['tsd'], result['pred'], result['std']):.2f}%")
-    print(f"MPIW: {mpiw(result['std']):.2f} MW")
+    # ---- Unified evaluation ----
+    metrics = {
+        "MAE": round(float(mae(result["tsd"], result["pred"])), 2),
+        "MAPE": round(float(mape(result["tsd"], result["pred"])), 2),
+        "RMSE": round(float(rmse(result["tsd"], result["pred"])), 2),
+        "NLL": round(float(gaussian_nll(result["tsd"], result["pred"], result["std"])), 4),
+        "PICP": round(float(picp(result["tsd"], result["pred"], result["std"])), 2),
+        "MPIW": round(float(mpiw(result["std"])), 2),
+    }
 
-    # 可视化
+    print(f"\n[{exp_name}]")
+    print(f"MAE:  {metrics['MAE']:.2f} MW")
+    print(f"MAPE: {metrics['MAPE']:.2f}%")
+    print(f"RMSE: {metrics['RMSE']:.2f} MW")
+    print(f"NLL:  {metrics['NLL']:.4f}")
+    print(f"PICP: {metrics['PICP']:.2f}%")
+    print(f"MPIW: {metrics['MPIW']:.2f} MW")
+
+    # Save metrics to JSON
+    with open(os.path.join(out_dir, "metrics.json"), "w") as f:
+        json.dump(metrics, f, indent=2)
+    print(f"\nMetrics saved to {out_dir}/metrics.json")
+
+    # ---- Visualization (save to files) ----
     setup_matplotlib()
-    plot_predictions(result)
-    plot_detail(result, "08-01-2024", "08-14-2024")
+
+    fig1 = plot_predictions(result, title=f"{exp_name} — Test Set Predictions")
+    fig1.savefig(os.path.join(out_dir, "predictions.png"), dpi=200, bbox_inches="tight")
+
+    fig2 = plot_detail(result, "08-01-2024", "08-14-2024")
+    fig2.savefig(os.path.join(out_dir, "detail.png"), dpi=200, bbox_inches="tight")
+
+    print(f"Figures saved to {out_dir}/")
+
     import matplotlib.pyplot as plt
     plt.show()
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--config", default="configs/default.yaml")
+    parser.add_argument("--config", default="configs/transformer.yaml")
     parser.add_argument("--checkpoint", default="checkpoints/transformer_best.pt")
     args = parser.parse_args()
     main(args.config, args.checkpoint)

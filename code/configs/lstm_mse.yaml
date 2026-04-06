@@ -1,9 +1,11 @@
 # ============================================================
-# Mamba (Selective SSM) 配置
+# LSTM deterministic baseline (MSE loss, no probabilistic output)
+# For comparison with the probabilistic version (lstm.yaml)
 # ============================================================
 
 seed: 221
 
+# --- Data ---
 data:
   csv_path: data/historic_demand_2009_2024_noNaN.csv
   date_start: "2019-01-01"
@@ -12,32 +14,29 @@ data:
   threshold_date_1: "01-01-2023"
   threshold_date_2: "01-01-2024"
 
+# --- Feature engineering ---
 features:
-  enabled: false
+  enabled: true
   columns:
-    - is_holiday
-    - settlement_period
-    - day_of_month
-    - day_of_week
-    - day_of_year
-    - quarter
-    - month
-    - week_of_year
-  cols_to_scale: all
+    - is_day_off
+  cols_to_scale:
+    - tsd
 
+# --- Sequence and batch ---
 seq_len: 48
 batch_size: 144
 
+# --- Model (identical to lstm.yaml) ---
 model:
-  type: mamba
+  type: lstm
   d_model: 64
-  d_state: 16          # SSM 隐状态维度
-  d_conv: 4            # 因果卷积核大小
-  expand: 2            # 内部扩展倍率（d_inner = d_model * expand）
   num_layers: 2
   dropout: 0.5
+  bidirectional: false
 
+# --- Training (only difference: loss changed to mse) ---
 training:
+  loss: mse
   num_epochs: 50
   learning_rate: 5.0e-4
   patience: 12

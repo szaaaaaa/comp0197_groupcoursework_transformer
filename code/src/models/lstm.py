@@ -7,16 +7,26 @@ from . import register_model
 
 @register_model("lstm")
 class TimeSeriesLSTM(BaseModel):
-    """基于 LSTM 的时序预测模型。
+    """LSTM-based time series forecasting model.
 
-    数据流: 输入(batch, seq_len, n_features)
-        -> Linear 投影 -> LSTM x num_layers -> 取最后时间步
+    Data flow::
+
+        input(batch, seq_len, n_features)
+        -> Linear projection -> LSTM x num_layers -> last time step
         -> mu_head / logvar_head -> (mu, var)
 
-    特点：
-    - 可选的输入投影层（当 d_model != n_features 时自动启用）
-    - 多层 LSTM，支持 dropout（层间）
-    - 双头输出：mu_head 预测均值，logvar_head 预测 log 方差
+    Parameters
+    ----------
+    n_features : int
+        Number of input features.
+    d_model : int
+        Hidden dimension for LSTM and projection.
+    num_layers : int
+        Number of stacked LSTM layers.
+    dropout : float
+        Dropout rate (applied between LSTM layers and in output heads).
+    bidirectional : bool
+        Whether to use bidirectional LSTM.
     """
 
     def __init__(self, n_features, d_model=64, num_layers=2, dropout=0.5,
@@ -26,11 +36,11 @@ class TimeSeriesLSTM(BaseModel):
         self.d_model = d_model
         self.num_directions = 2 if bidirectional else 1
 
-        # 输入投影: 将原始特征维度映射到 d_model
+        # Input projection: map raw feature dim to d_model
         self.input_proj = nn.Linear(n_features, d_model)
 
-        # LSTM 主体
-        # dropout 仅在 num_layers > 1 时生效（作用于层间）
+        # LSTM backbone
+        # dropout only applies between layers when num_layers > 1
         self.lstm = nn.LSTM(
             input_size=d_model,
             hidden_size=d_model,
@@ -42,7 +52,7 @@ class TimeSeriesLSTM(BaseModel):
 
         self.norm = nn.LayerNorm(d_model * self.num_directions)
 
-        # 输出头: 均值和 log 方差
+        # Output heads: mean and log variance
         head_input_dim = d_model * self.num_directions
         self.mu_head = nn.Sequential(
             nn.Linear(head_input_dim, 32),
@@ -58,21 +68,31 @@ class TimeSeriesLSTM(BaseModel):
         )
 
     def forward(self, x):
+        """Forward pass.
+
+        Parameters
+        ----------
+        x : torch.Tensor, shape (batch, seq_len, n_features)
+            Input time series.
+
+        Returns
+        -------
+        mu : torch.Tensor, shape (batch,)
+            Predicted mean.
+        var : torch.Tensor, shape (batch,)
+            Predicted variance (exp of log-variance).
         """
-        x: (batch, seq_len, n_features)
-        返回: (mu, var)，各 shape 为 (batch,)
-        """
-        # 投影到 d_model 维
+        # Project to d_model dim
         x = self.input_proj(x)              # (batch, seq_len, d_model)
 
-        # LSTM 编码
+        # LSTM encoding
         output, (h_n, _) = self.lstm(x)     # output: (batch, seq_len, d_model * num_directions)
 
-        # 取最后时间步的输出
+        # Take last time step output
         x = output[:, -1, :]               # (batch, d_model * num_directions)
         x = self.norm(x)
 
-        # 双头输出
+        # Dual-head output
         mu = self.mu_head(x).squeeze(-1)            # (batch,)
         log_var = self.logvar_head(x).squeeze(-1)   # (batch,)
         var = torch.exp(log_var)

@@ -1,8 +1,9 @@
 """
-SARIMA 模型封装。
+SARIMA model wrapper.
 
-不继承 BaseModel(nn.Module)，因为 SARIMA 是传统统计模型，不使用 PyTorch。
-通过 train.py / test.py 中的 if-else 分支调用。
+Does not inherit BaseModel(nn.Module) since SARIMA is a traditional
+statistical model without PyTorch.  Invoked via if-else branching in
+train.py / test.py.
 """
 
 import os
@@ -15,9 +16,10 @@ from dataclasses import dataclass
 import numpy as np
 import pandas as pd
 from statsmodels.tsa.arima.model import ARIMA
+from tqdm import tqdm
 
 
-# ---- 常量 ----
+# ---- Constants ----
 SEASONAL_PERIOD = 48
 FIT_METHOD = "statespace"
 FIT_COV_TYPE = "opg"
@@ -38,7 +40,20 @@ class SarimaSpec:
 
 
 def parse_candidate_specs(specs_cfg, seasonal_period):
-    """从 yaml 配置解析候选参数列表。"""
+    """Parse candidate SARIMA parameter specs from YAML config.
+
+    Parameters
+    ----------
+    specs_cfg : list of dict
+        Each dict must contain ``order`` and ``seasonal_order`` keys.
+    seasonal_period : int
+        Seasonal period appended to ``seasonal_order``.
+
+    Returns
+    -------
+    list of SarimaSpec
+        Parsed candidate specifications.
+    """
     return [
         SarimaSpec(
             order=tuple(s["order"]),
@@ -48,7 +63,7 @@ def parse_candidate_specs(specs_cfg, seasonal_period):
     ]
 
 
-# ---- 工具函数 ----
+# ---- Utility functions ----
 
 def _configure_warnings():
     warnings.filterwarnings("ignore", message="No frequency information was provided")
@@ -58,7 +73,22 @@ def _configure_warnings():
 
 
 def _as_sequential(series, start=0):
-    """将 datetime 索引转为连续整数索引（避免夏令时间隔问题）。"""
+    """Convert datetime index to sequential integer index.
+
+    Avoids DST gap issues that statsmodels cannot handle.
+
+    Parameters
+    ----------
+    series : pd.Series
+        Series with datetime index.
+    start : int
+        Starting integer index.
+
+    Returns
+    -------
+    pd.Series
+        Same values with a ``RangeIndex``.
+    """
     return pd.Series(
         series.to_numpy(copy=False),
         index=pd.RangeIndex(start=start, stop=start + len(series), step=1),
@@ -67,11 +97,22 @@ def _as_sequential(series, start=0):
 
 
 def _calendar_day_blocks(series):
-    """按日历天分组。"""
+    """Group a series into blocks by calendar day.
+
+    Parameters
+    ----------
+    series : pd.Series
+        Series with datetime index.
+
+    Returns
+    -------
+    list of pd.Series
+        One entry per calendar day, sorted chronologically.
+    """
     return [block.copy() for _, block in series.groupby(series.index.normalize(), sort=True)]
 
 
-# ---- 模型拟合 ----
+# ---- Model fitting ----
 
 def _build_arima(series, spec):
     return ARIMA(
@@ -106,10 +147,27 @@ def _fit_converged(result):
     return None
 
 
-# ---- 超参选择 ----
+# ---- Hyperparameter selection ----
 
 def _build_selection_split(train, window_steps, val_day_count):
-    """在训练集内部划分：最近 window_steps 作为 history，最后 val_day_count 天做验证。"""
+    """Split within training set for internal validation.
+
+    Parameters
+    ----------
+    train : pd.Series
+        Full training series.
+    window_steps : int
+        Maximum number of recent steps to keep as fitting history.
+    val_day_count : int
+        Number of trailing calendar days used for validation.
+
+    Returns
+    -------
+    history : pd.Series
+        Fitting history (most recent ``window_steps`` excluding validation).
+    validation : pd.Series
+        Validation portion (last ``val_day_count`` calendar days).
+    """
     unique_days = pd.Index(train.index.normalize().unique()).sort_values()
     val_days = unique_days[-val_day_count:]
     val_mask = train.index.normalize().isin(val_days)
@@ -119,7 +177,24 @@ def _build_selection_split(train, window_steps, val_day_count):
 
 
 def _evaluate_candidate(history, validation, spec, index):
-    """评估单个候选参数：拟合 + rolling 验证。"""
+    """Evaluate a single candidate spec via fit + rolling validation.
+
+    Parameters
+    ----------
+    history : pd.Series
+        Training history for fitting.
+    validation : pd.Series
+        Validation series for rolling evaluation.
+    spec : SarimaSpec
+        Candidate SARIMA specification.
+    index : int
+        Candidate index (for reporting).
+
+    Returns
+    -------
+    dict
+        Evaluation results including ``validation_rmse`` and ``aic``.
+    """
     row = {
         "index": index,
         "label": spec.label,
@@ -148,7 +223,26 @@ def _eval_task(args):
 
 
 def select_best_spec(train, candidate_specs, window_steps, val_day_count):
-    """网格搜索选择最优 SARIMA 参数。"""
+    """Grid search to select the best SARIMA parameters.
+
+    Parameters
+    ----------
+    train : pd.Series
+        Full training series (train + val merged).
+    candidate_specs : list of SarimaSpec
+        Candidate specifications to evaluate.
+    window_steps : int
+        Fitting history window size.
+    val_day_count : int
+        Number of validation days.
+
+    Returns
+    -------
+    best_spec : SarimaSpec
+        Specification with the lowest validation RMSE.
+    selection_df : pd.DataFrame
+        Full evaluation results for all candidates.
+    """
     _configure_warnings()
     history, validation = _build_selection_split(train, window_steps, val_day_count)
 
@@ -156,10 +250,11 @@ def select_best_spec(train, candidate_specs, window_steps, val_day_count):
     max_workers = min(len(tasks), max(1, min(4, os.cpu_count() or 1)))
 
     if max_workers <= 1:
-        records = [_eval_task(t) for t in tasks]
+        records = [_eval_task(t) for t in tqdm(tasks, desc="SARIMA grid search", unit="spec")]
     else:
         with ThreadPoolExecutor(max_workers=max_workers) as pool:
-            records = list(pool.map(_eval_task, tasks))
+            records = list(tqdm(pool.map(_eval_task, tasks), total=len(tasks),
+                                desc="SARIMA grid search", unit="spec"))
 
     df = pd.DataFrame(records)
     ok = df[df["status"] == "ok"].copy()
@@ -176,10 +271,29 @@ def select_best_spec(train, candidate_specs, window_steps, val_day_count):
     return best_spec, df
 
 
-# ---- Rolling day-ahead 预测 ----
+# ---- Rolling day-ahead forecast ----
 
 def _extract_uncertainty(forecast, predicted_mean, block_size):
-    """从 statsmodels forecast 对象提取 std 和置信区间。"""
+    """Extract std and confidence intervals from a statsmodels forecast.
+
+    Parameters
+    ----------
+    forecast : statsmodels forecast object
+        Result of ``get_forecast()``.
+    predicted_mean : np.ndarray
+        Point predictions for the block.
+    block_size : int
+        Number of steps in the current block.
+
+    Returns
+    -------
+    std : np.ndarray
+        Standard deviations.
+    lower : np.ndarray
+        Lower 95 % confidence bound.
+    upper : np.ndarray
+        Upper 95 % confidence bound.
+    """
     # std
     se = getattr(forecast, "se_mean", None)
     if se is not None:
@@ -200,7 +314,7 @@ def _extract_uncertainty(forecast, predicted_mean, block_size):
         lower = predicted_mean - Z_SCORE_95 * std
         upper = predicted_mean + Z_SCORE_95 * std
 
-    # 用 conf_int 补充 std 中的 nan
+    # Fill NaN in std using conf_int
     derived_std = (upper - lower) / (2.0 * Z_SCORE_95)
     std = np.where(np.isfinite(std), std, np.maximum(derived_std, 0.0))
 
@@ -211,12 +325,32 @@ def _extract_uncertainty(forecast, predicted_mean, block_size):
 
 
 def rolling_day_ahead_forecast(fitted_result, history, evaluation):
-    """Rolling day-ahead 预测：每天预测一天，然后用真实值更新状态。"""
+    """Rolling day-ahead forecast.
+
+    Predict one day at a time, then update the model state with actual
+    values (parameters stay fixed).
+
+    Parameters
+    ----------
+    fitted_result : statsmodels result
+        Fitted ARIMA result object.
+    history : pd.Series
+        Training history used for fitting.
+    evaluation : pd.Series
+        Evaluation series to forecast over.
+
+    Returns
+    -------
+    pd.DataFrame
+        Columns: ``actual``, ``prediction``, ``prediction_std``,
+        ``lower_95``, ``upper_95``.
+    """
     current = fitted_result
     next_pos = len(history)
     records = []
+    day_blocks = _calendar_day_blocks(evaluation)
 
-    for actual_block in _calendar_day_blocks(evaluation):
+    for actual_block in tqdm(day_blocks, desc="Rolling forecast", unit="day"):
         n = len(actual_block)
         forecast = current.get_forecast(steps=n)
         predicted_mean = np.asarray(forecast.predicted_mean, dtype=float)[:n]
@@ -231,7 +365,7 @@ def rolling_day_ahead_forecast(fitted_result, history, evaluation):
         }, index=actual_block.index)
         records.append(block_df)
 
-        # 用真实值更新状态（固定参数，只更新状态）
+        # Update state with actual values (fixed parameters, state update only)
         new_obs = _as_sequential(actual_block, start=next_pos)
         current = current.extend(new_obs)
         next_pos += n
@@ -239,10 +373,20 @@ def rolling_day_ahead_forecast(fitted_result, history, evaluation):
     return pd.concat(records)
 
 
-# ---- 保存 / 加载 ----
+# ---- Save / Load ----
 
 def save_model(fitted_result, spec, path):
-    """保存模型参数到 pickle。"""
+    """Save SARIMA model parameters to a pickle file.
+
+    Parameters
+    ----------
+    fitted_result : statsmodels result
+        Fitted ARIMA result whose ``.params`` will be saved.
+    spec : SarimaSpec
+        Model specification (order and seasonal_order).
+    path : str
+        Destination file path.
+    """
     os.makedirs(os.path.dirname(path), exist_ok=True)
     payload = {
         "order": list(spec.order),
@@ -255,7 +399,20 @@ def save_model(fitted_result, spec, path):
 
 
 def load_model(path):
-    """加载保存的模型参数。"""
+    """Load saved SARIMA model parameters.
+
+    Parameters
+    ----------
+    path : str
+        Path to the pickle file.
+
+    Returns
+    -------
+    spec : SarimaSpec
+        Model specification.
+    params : list of float
+        Fitted parameter values.
+    """
     with open(path, "rb") as f:
         payload = pickle.load(f)
     spec = SarimaSpec(
@@ -265,38 +422,59 @@ def load_model(path):
     return spec, payload["params"]
 
 
-# ---- 主入口（供 train.py / test.py 调用） ----
+# ---- Main entry points (called by train.py / test.py) ----
 
 def train_sarima(train_series, val_series, cfg):
-    """训练 SARIMA：选参 → 拟合 → rolling 预测测试集。
+    """Train SARIMA: parameter selection, fit, and checkpoint saving.
 
-    SARIMA 用 train+val 合并训练（因为不需要 early stopping 的独立验证集）。
-    参数选择在合并后的训练集内部做 rolling validation。
+    SARIMA merges train + val for training (no early-stopping validation
+    set needed).  Parameter selection uses rolling validation within the
+    merged training set.
+
+    Parameters
+    ----------
+    train_series : pd.Series
+        Training target series.
+    val_series : pd.Series
+        Validation target series (merged with train for fitting).
+    cfg : dict
+        Full experiment configuration.
+
+    Returns
+    -------
+    fitted : statsmodels result
+        Fitted model on the full training set.
+    best_spec : SarimaSpec
+        Selected specification.
+    full_train : pd.Series
+        Merged train + val series.
+    ckpt_path : str
+        Path to the saved checkpoint.
     """
     _configure_warnings()
     model_cfg = cfg["model"]
     train_cfg = cfg["training"]
     seasonal_period = model_cfg.get("seasonal_period", SEASONAL_PERIOD)
 
-    # 合并 train + val 作为 SARIMA 的完整训练集
+    # Merge train + val as SARIMA's full training set
     full_train = pd.concat([train_series, val_series])
 
-    # 解析候选参数
+    # Parse candidate specs
     specs = parse_candidate_specs(model_cfg["candidate_specs"], seasonal_period)
 
-    # 选择最优参数
+    # Select best parameters
     window_steps = train_cfg.get("selection_window_steps", SEASONAL_PERIOD * 120)
     val_days = train_cfg.get("validation_day_count", 14)
     best_spec, selection_df = select_best_spec(full_train, specs, window_steps, val_days)
 
-    # 在完整训练集上拟合
+    # Fit on full training set
     print("Fitting on full training set...")
     started = time.perf_counter()
     fitted = _fit(full_train, best_spec, cov_type=SAVED_FIT_COV_TYPE, low_memory=True)
     fit_time = time.perf_counter() - started
     print(f"Fit completed in {fit_time:.1f}s")
 
-    # 保存模型
+    # Save model
     ckpt_path = os.path.join("checkpoints", "sarima_best.pkl")
     save_model(fitted, best_spec, ckpt_path)
 
@@ -304,14 +482,32 @@ def train_sarima(train_series, val_series, cfg):
 
 
 def predict_sarima(fitted_or_params, spec, train_series, test_series):
-    """用已拟合模型（或加载的参数）做 rolling 预测。"""
+    """Make rolling predictions using a fitted model or loaded parameters.
+
+    Parameters
+    ----------
+    fitted_or_params : statsmodels result or list of float
+        Either a fitted result object or saved parameter values.
+    spec : SarimaSpec
+        Model specification.
+    train_series : pd.Series
+        Training series used for state initialization.
+    test_series : pd.Series
+        Test series to forecast.
+
+    Returns
+    -------
+    pd.DataFrame
+        Forecast DataFrame with ``actual``, ``prediction``,
+        ``prediction_std``, ``lower_95``, ``upper_95``.
+    """
     _configure_warnings()
 
     if isinstance(fitted_or_params, list):
-        # 从保存的参数重建
+        # Rebuild from saved parameters
         result = _rebuild_from_params(train_series, spec, fitted_or_params)
     else:
-        # 直接用 rebuild 确保干净状态
+        # Use rebuild to ensure clean state
         result = _rebuild_from_params(train_series, spec, fitted_or_params.params)
 
     forecast_df = rolling_day_ahead_forecast(result, train_series, test_series)

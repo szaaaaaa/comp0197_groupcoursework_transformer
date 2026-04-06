@@ -2,11 +2,12 @@ import torch.nn as nn
 
 
 class BaseModel(nn.Module):
-    """所有时序预测模型的基类。
+    """Base class for all time series forecasting models.
 
-    子类需实现：
-    - forward(x) -> (mu, var)
-    - from_config(cls, model_cfg, n_features) -> model instance
+    Subclasses must implement:
+
+    * ``forward(x)`` -> ``(mu, var)``
+    * ``from_config(cls, model_cfg, n_features)`` -> model instance
     """
 
     def forward(self, x):
@@ -14,5 +15,18 @@ class BaseModel(nn.Module):
 
     @classmethod
     def from_config(cls, model_cfg: dict, n_features: int):
-        """从 config 字典构造模型实例，子类需重写。"""
+        """Construct a model instance from a config dict.
+
+        Parameters
+        ----------
+        model_cfg : dict
+            Model-specific configuration entries.
+        n_features : int
+            Number of input features.
+
+        Returns
+        -------
+        BaseModel
+            Constructed model instance.
+        """
         raise NotImplementedError

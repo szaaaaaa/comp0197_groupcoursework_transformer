@@ -4,11 +4,38 @@ from torch.utils.data import DataLoader, TensorDataset
 
 
 class TimeSeriesDataset:
-    """处理归一化、滑动窗口、DataLoader 构建。
+    """Normalization, sliding window, and DataLoader construction.
 
-    支持两种模式：
-    - 有特征工程：输入 (seq_len, n_features)，目标为最后一列 tsd
-    - 无特征工程：输入 (seq_len, 1)，仅用历史 tsd
+    Supports two modes:
+
+    * With feature engineering: input ``(seq_len, n_features)``, target is
+      the last column (tsd).
+    * Without feature engineering: input ``(seq_len, 1)``, using only
+      historical tsd.
+
+    Parameters
+    ----------
+    train_df, val_df, test_df : pd.DataFrame
+        Split DataFrames with datetime index.
+    features : list of str
+        Feature column names (empty list for no-feature mode).
+    target : str
+        Target column name.
+    cols_to_scale : list of str or ``"all"``
+        Columns to apply MinMax normalization.
+    seq_len : int
+        Input sequence length.
+    batch_size : int
+        Batch size for DataLoaders.
+
+    Attributes
+    ----------
+    n_features : int
+        Number of input features (including target).
+    test_index : pd.DatetimeIndex
+        Datetime index of the test predictions.
+    test_actual : np.ndarray
+        Ground-truth target values for the test set.
     """
 
     def __init__(self, train_df, val_df, test_df, features, target, cols_to_scale,
@@ -25,26 +52,26 @@ class TimeSeriesDataset:
             self._prepare_no_features(train_df, val_df, test_df, target)
 
     def _prepare_with_features(self, train_df, val_df, test_df, features, target, cols_to_scale):
-        """有特征工程模式：多维输入。"""
+        """Prepare multi-dimensional input with feature engineering."""
         columns = features + [target]
         train_np = train_df[columns].values.astype(np.float32)
         val_np = val_df[columns].values.astype(np.float32)
         test_np = test_df[columns].values.astype(np.float32)
 
-        # 确定需要归一化的列索引
+        # Determine column indices to normalize
         if cols_to_scale == "all":
             scale_cols = columns
         else:
             scale_cols = cols_to_scale
         scale_indices = [columns.index(c) for c in scale_cols]
 
-        # 在训练集上计算 min / max
+        # Compute min / max on training set
         data_min = train_np[:, scale_indices].min(axis=0)
         data_max = train_np[:, scale_indices].max(axis=0)
         data_range = data_max - data_min
         data_range[data_range == 0] = 1.0
 
-        # 归一化
+        # Normalize
         train_scaled = train_np.copy()
         val_scaled = val_np.copy()
         test_scaled = test_np.copy()
@@ -52,29 +79,29 @@ class TimeSeriesDataset:
         val_scaled[:, scale_indices] = (val_np[:, scale_indices] - data_min) / data_range
         test_scaled[:, scale_indices] = (test_np[:, scale_indices] - data_min) / data_range
 
-        # tsd 的反归一化参数
+        # Inverse normalization parameters for tsd
         tsd_scale_idx = scale_cols.index(target)
         self.tsd_min = data_min[tsd_scale_idx]
         self.tsd_range = data_range[tsd_scale_idx]
 
-        # 滑动窗口
+        # Sliding window
         self.X_train, self.y_train = self._create_sequences_multi(train_scaled)
         self.X_val, self.y_val = self._create_sequences_multi(val_scaled)
         self.X_test, self.y_test = self._create_sequences_multi(test_scaled)
 
         self.n_features = len(features) + 1  # features + target(tsd)
 
-        # 保存原始测试集用于结果构建
+        # Save original test set for result construction
         self.test_index = test_df.index[self.seq_len:]
         self.test_actual = test_df[target].iloc[self.seq_len:].values
 
     def _prepare_no_features(self, train_df, val_df, test_df, target):
-        """无特征工程模式：仅 tsd，1 维输入。"""
+        """Prepare 1-dimensional input using only tsd."""
         train_np = train_df[target].values.astype(np.float32)
         val_np = val_df[target].values.astype(np.float32)
         test_np = test_df[target].values.astype(np.float32)
 
-        # MinMax 归一化
+        # MinMax normalization
         self.tsd_min = train_np.min()
         tsd_max = train_np.max()
         self.tsd_range = tsd_max - self.tsd_min
@@ -83,27 +110,53 @@ class TimeSeriesDataset:
         val_scaled = (val_np - self.tsd_min) / self.tsd_range
         test_scaled = (test_np - self.tsd_min) / self.tsd_range
 
-        # 滑动窗口
+        # Sliding window
         self.X_train, self.y_train = self._create_sequences_single(train_scaled)
         self.X_val, self.y_val = self._create_sequences_single(val_scaled)
         self.X_test, self.y_test = self._create_sequences_single(test_scaled)
 
         self.n_features = 1
 
-        # 保存原始测试集用于结果构建
+        # Save original test set for result construction
         self.test_index = test_df.index[self.seq_len:]
         self.test_actual = test_df[target].iloc[self.seq_len:].values
 
     def _create_sequences_multi(self, data):
-        """多维滑动窗口：X = data[i:i+seq_len, :] (含 tsd), y = data[i+seq_len, -1]"""
+        """Create multi-dimensional sliding windows.
+
+        Parameters
+        ----------
+        data : np.ndarray, shape (n_samples, n_cols)
+            Scaled data array.
+
+        Returns
+        -------
+        X : np.ndarray, shape (n_windows, seq_len, n_cols)
+            Input sequences.
+        y : np.ndarray, shape (n_windows,)
+            Target values (last column at ``i + seq_len``).
+        """
         X, y = [], []
         for i in range(len(data) - self.seq_len):
-            X.append(data[i:i + self.seq_len])          # 所有列（含历史 tsd）
-            y.append(data[i + self.seq_len, -1])        # 目标：下一步 tsd
+            X.append(data[i:i + self.seq_len])          # All columns (incl. historical tsd)
+            y.append(data[i + self.seq_len, -1])        # Target: next-step tsd
         return np.array(X), np.array(y)
 
     def _create_sequences_single(self, data):
-        """单维滑动窗口：X = data[i:i+seq_len], y = data[i+seq_len]"""
+        """Create single-dimensional sliding windows.
+
+        Parameters
+        ----------
+        data : np.ndarray, shape (n_samples,)
+            Scaled 1-D data array.
+
+        Returns
+        -------
+        X : np.ndarray, shape (n_windows, seq_len, 1)
+            Input sequences.
+        y : np.ndarray, shape (n_windows,)
+            Target values at ``i + seq_len``.
+        """
         X, y = [], []
         for i in range(len(data) - self.seq_len):
             X.append(data[i:i + self.seq_len])
@@ -112,7 +165,13 @@ class TimeSeriesDataset:
         return X, np.array(y)
 
     def get_loaders(self):
-        """返回 train / val / test DataLoader。"""
+        """Build and return train / val / test DataLoaders.
+
+        Returns
+        -------
+        tuple of DataLoader
+            (train_loader, val_loader, test_loader).
+        """
         train_ds = TensorDataset(
             torch.tensor(self.X_train, dtype=torch.float32),
             torch.tensor(self.y_train, dtype=torch.float32),
@@ -131,7 +190,20 @@ class TimeSeriesDataset:
         return train_loader, val_loader, test_loader
 
     def inverse_transform(self, pred_scaled, std_scaled=None):
-        """将归一化的预测值还原到原始尺度。"""
+        """Inverse-transform normalized predictions back to original scale.
+
+        Parameters
+        ----------
+        pred_scaled : np.ndarray
+            Normalized predicted means.
+        std_scaled : np.ndarray, optional
+            Normalized predicted standard deviations.
+
+        Returns
+        -------
+        np.ndarray or tuple of np.ndarray
+            Rescaled predictions, and optionally rescaled std.
+        """
         pred = pred_scaled * self.tsd_range + self.tsd_min
         if std_scaled is not None:
             std = std_scaled * self.tsd_range

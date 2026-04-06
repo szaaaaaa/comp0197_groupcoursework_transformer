@@ -1,10 +1,10 @@
 # ============================================================
-# SARIMA 超参数配置
+# SARIMA hyperparameter configuration
 # ============================================================
 
 seed: 221
 
-# --- 数据（与深度学习模型统一） ---
+# --- Data (unified with deep learning models) ---
 data:
   csv_path: data/historic_demand_2009_2024_noNaN.csv
   date_start: "2019-01-01"
@@ -13,11 +13,11 @@ data:
   threshold_date_1: "01-01-2023"
   threshold_date_2: "01-01-2024"
 
-# --- 特征工程（SARIMA 不使用外部特征） ---
+# --- Feature engineering (SARIMA does not use external features) ---
 features:
   enabled: false
 
-# --- 模型 ---
+# --- Model ---
 model:
   type: sarima
   seasonal_period: 48
@@ -47,7 +47,7 @@ model:
     - order: [2,0,1]
       seasonal_order: [1,1,0]
 
-# --- 训练（SARIMA 的超参选择设置） ---
+# --- Training (SARIMA hyperparameter selection settings) ---
 training:
-  selection_window_steps: 5760   # 48 * 120 天
+  selection_window_steps: 5760   # 48 * 120 days
   validation_day_count: 14

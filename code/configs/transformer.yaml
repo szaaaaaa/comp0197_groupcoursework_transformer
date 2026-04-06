@@ -1,19 +1,19 @@
 # ============================================================
-# 默认超参数配置
+# Transformer hyperparameter configuration
 # ============================================================
 
 seed: 221
 
-# --- 数据 ---
+# --- Data ---
 data:
   csv_path: data/historic_demand_2009_2024_noNaN.csv
   date_start: "2019-01-01"
   date_end: "2024-12-31"
   target: tsd
-  threshold_date_1: "01-01-2023"   # train/val 分界
-  threshold_date_2: "01-01-2024"   # val/test 分界
+  threshold_date_1: "01-01-2023"   # train/val split
+  threshold_date_2: "01-01-2024"   # val/test split
 
-# --- 特征工程（设 enabled: false 则仅用历史 tsd） ---
+# --- Feature engineering (set enabled: false to use only historical tsd) ---
 features:
   enabled: true
   columns:
@@ -21,20 +21,20 @@ features:
   cols_to_scale:
     - tsd
 
-# --- 序列与批次 ---
+# --- Sequence and batch ---
 seq_len: 48
 batch_size: 144
 
-# --- 模型 ---
+# --- Model ---
 model:
-  type: transformer    # transformer / lstm（以后扩展）
+  type: transformer
   d_model: 64
   nhead: 4
   num_layers: 2
   dim_feedforward: 128
   dropout: 0.5
 
-# --- 训练 ---
+# --- Training ---
 training:
   num_epochs: 50
   learning_rate: 5.0e-4

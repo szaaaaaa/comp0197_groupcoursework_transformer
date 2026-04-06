@@ -2,23 +2,38 @@ import pandas as pd
 
 
 def load_and_clean(csv_path: str, date_start: str, date_end: str) -> pd.DataFrame:
-    """加载 CSV，清洗数据，设置日期索引，过滤日期范围。"""
+    """Load CSV, clean data, set date index, and filter date range.
+
+    Parameters
+    ----------
+    csv_path : str
+        Path to the raw CSV file.
+    date_start : str
+        Start date for filtering (inclusive).
+    date_end : str
+        End date for filtering (inclusive).
+
+    Returns
+    -------
+    pd.DataFrame
+        Cleaned DataFrame with datetime index.
+    """
     df = pd.read_csv(csv_path)
     df.columns = df.columns.str.lower()
 
-    # 排序
+    # Sort
     df.sort_values(by=["settlement_date", "settlement_period"], inplace=True, ignore_index=True)
 
-    # 删除含大量缺失值的列
+    # Drop columns with many missing values
     for col in ["nsl_flow", "eleclink_flow"]:
         if col in df.columns:
             df.drop(columns=[col], inplace=True)
 
-    # 删除异常 settlement_period (> 48)
+    # Remove anomalous settlement_period (> 48)
     df.drop(index=df[df["settlement_period"] > 48].index, inplace=True)
     df.reset_index(drop=True, inplace=True)
 
-    # 删除 tsd 为 0 的整天数据
+    # Remove full days where tsd is 0
     null_days = df.loc[df["tsd"] == 0.0, "settlement_date"].unique().tolist()
     null_days_index = []
     for day in null_days:
@@ -28,19 +43,34 @@ def load_and_clean(csv_path: str, date_start: str, date_end: str) -> pd.DataFram
         df.drop(index=null_days_index, inplace=True)
         df.reset_index(drop=True, inplace=True)
 
-    # 设置日期索引
+    # Set date index
     df["settlement_date"] = pd.to_datetime(df["settlement_date"])
     df.set_index("settlement_date", inplace=True)
     df.sort_index(inplace=True)
 
-    # 过滤日期范围
+    # Filter date range
     df = df[date_start:date_end]
 
     return df
 
 
 def split_data(df: pd.DataFrame, threshold_1: str, threshold_2: str):
-    """按日期划分 train / val / test。"""
+    """Split data into train / val / test by date.
+
+    Parameters
+    ----------
+    df : pd.DataFrame
+        Full dataset with datetime index.
+    threshold_1 : str
+        Date string for train/val split boundary.
+    threshold_2 : str
+        Date string for val/test split boundary.
+
+    Returns
+    -------
+    tuple of pd.DataFrame
+        (train_df, val_df, test_df).
+    """
     train = df.loc[df.index < threshold_1].copy()
     val = df.loc[(df.index >= threshold_1) & (df.index < threshold_2)].copy()
     test = df.loc[df.index >= threshold_2].copy()
